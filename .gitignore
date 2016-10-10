@@ -1,0 +1,45 @@
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+*.pyc
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Backup files
+*~
+*.bak
+
+# IntelliJ
+.idea/
+
+Build/
+Build64/
+build/
+build64/
+resourceBuild/
+
+data.sb
+imgui.ini
+
+# SCons
+.sconsign.dblite
