@@ -6,6 +6,9 @@ set(EXECUTABLE_NAME "Emul86")
 ##############################################################
 # Setup options for submodules
 ##############################################################
+option (GLFW_BUILD_EXAMPLES OFF)
+option (GLFW_BUILD_TESTS OFF)
+option (GLFW_INSTALL OFF)
 option (USE_MSVC_RUNTIME_LIBRARY_DLL OFF)
 set(SKIP_INSTALL_ALL ON CACHE BOOL "Skip install" FORCE)
 
@@ -18,7 +21,6 @@ include(CheckIncludeFile)
 ##############################################################
 # Setup compiler options and configurations
 ##############################################################
-
 if(MSVC)
 	set(COMMON_OPTIONS /W3 /wd4996 /we4239 /we4002 /we4700 -DGUID_WINDOWS /EHsc /MP)
 	set(DEBUG_OPTIONS /MTd /Od /Zi)
@@ -64,31 +66,47 @@ else ()
 endif ()
 
 ##############################################################
+# Generating OpenGL profile
+##############################################################
+message("Executing gl3w_gen.py")
+execute_process(COMMAND python gl3w_gen.py WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/libs/gl3w)
+
+##############################################################
 # Adding libraries and subdirectories
 ##############################################################
-
-set(GLM_H_PATH ${CMAKE_SOURCE_DIR}/libs/glm )
-
-set(LZ4_DIR libs/lz4/lib/)
-set(LZ4_LIBRARY lz4)
-set(SOURCES_LZ4 ${LZ4_DIR}lz4.c ${LZ4_DIR}lz4hc.c ${LZ4_DIR}lz4.h ${LZ4_DIR}lz4hc.h ${LZ4_DIR}xxhash.c ${LZ4_DIR}xxhash.h)
-
-add_library(lz4 ${SOURCES_LZ4})
+add_subdirectory (libs/glfw)
+add_subdirectory (libs/gl3w)
 
 ##############################################################
 # Includes
 ##############################################################
 include_directories(libs/glm)
-include_directories(libs/lz4/lib)
+include_directories(libs/glfw/include)
+include_directories(libs/gl3w/include)
+include_directories(libs/SimpleText/include)
 include_directories(sources)
-
 include_directories("${PROJECT_BINARY_DIR}")
+include_directories(libs/imgui)
+
+find_package(OpenGL)
+if (OPENGL_FOUND)
+	message("OpenGL Correctly Found")
+	include_directories(${OPENGL_INCLUDE_DIR})
+else (OPENGL_FOUND)
+	message("OpenGL environment missing")
+endif (OPENGL_FOUND)
+
+#####################################################################
+# imgui
+#####################################################################
+set(IMGUI_DIR libs/imgui)
+file(GLOB IMGUI_SOURCES ${IMGUI_DIR}/*.cpp ${IMGUI_DIR}/*.h )
+add_library(imgui ${IMGUI_SOURCES} ${IMGUI_DIR}/extra_fonts/binary_to_compressed_c.cpp ${IMGUI_DIR}/examples/opengl3_example/imgui_impl_glfw_gl3.cpp)
 
 ##############################################################
 # Main sources
 ##############################################################
-file(GLOB_RECURSE SOURCES sources/*.cpp sources/*.h sources/*.cc sources/*.proto)
-
+file(GLOB_RECURSE SOURCES sources/*.cpp sources/*.h)
 
 ##############################################################
 # Targets
@@ -98,4 +116,4 @@ add_executable(Emul86 ${SOURCES})
 ##############################################################
 # Linkage
 ##############################################################
-target_link_libraries(Emul86 lz4)
+target_link_libraries(Emul86 glfw gl3w imgui ${GLFW_LIBRARIES} ${OPENGL_LIBRARIES})
