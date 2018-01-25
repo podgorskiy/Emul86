@@ -1,0 +1,15 @@
+[submodule "libs/glm"]
+	path = libs/glm
+	url = https://github.com/g-truc/glm.git
+[submodule "libs/gl3w"]
+	path = libs/gl3w
+	url = https://github.com/skaslev/gl3w.git
+[submodule "libs/glfw"]
+	path = libs/glfw
+	url = https://github.com/glfw/glfw.git
+[submodule "libs/SimpleText"]
+	path = libs/SimpleText
+	url = https://github.com/podgorskiy/SimpleText.git
+[submodule "libs/imgui"]
+	path = libs/imgui
+	url = https://github.com/ocornut/imgui.git
