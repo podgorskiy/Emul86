@@ -1,6 +1,7 @@
 #pragma once
 #include <inttypes.h>
 #include <string>
+#include <imgui.h>
 
 template <typename I> 
 inline std::string n2hexstr(I w, size_t hex_len = sizeof(I) << 1)
@@ -12,38 +13,115 @@ inline std::string n2hexstr(I w, size_t hex_len = sizeof(I) << 1)
 	return rc;
 }
 
+template <typename I>
+inline char* n2hexstr(char* dst, I w, size_t hex_len = sizeof(I) << 1)
+{
+	static const char* digits = "0123456789ABCDEF";
+	memset(dst, '0', hex_len);
+	for (size_t i = 0, j = (hex_len - 1) * 4; i<hex_len; ++i, j -= 4)
+		dst[i] = digits[(w >> j) & 0x0f];
+	return &(*(dst + hex_len) = '\x0');
+}
+
 #ifdef _DEBUG
-#define APPEND_DBG(X) m_disasm += X;
+#define APPEND_DBG(X) \
+dbg_args_ptr = strcpy(dbg_args_ptr, X) + strlen(X);
 #else
 #define APPEND_DBG(X)
 #endif
 
 #ifdef _DEBUG
-#define PREPEND_DBG(X) m_disasm = X + m_disasm;
+#define APPEND_HEX_DBG(X) \
+dbg_args_ptr = n2hexstr(dbg_args_ptr, X)
 #else
-#define PREPEND_DBG(X)
+#define APPEND_HEX_DBG(X)
+#endif
+
+#ifdef _DEBUG
+#define APPEND_HEXN_DBG(X,N) \
+dbg_args_ptr = n2hexstr(dbg_args_ptr, X, N)
+#else
+#define APPEND_HEXN_DBG(X)
+#endif
+
+#ifdef _DEBUG
+#define CMD_NAME(X) strcpy(dbg_cmd_name, X);
+#else
+#define CMD_NAME(X)
 #endif
 
 class CPU
 {
 public:
-	CPU();
-	void Step();
-	void LoadData(uint32_t dest, const char* source, uint32_t size);
-private:
 	typedef uint16_t word;
 	typedef uint8_t byte;
 
-	enum Segments
+	class InterruptHandler
 	{
-		ES = 0, CS = 1, SS = 2, DS = 3, NONE = 4
+	public:
+		virtual void Int(byte x) = 0;
 	};
+
 	enum Registers
 	{
 		AL = 0, CL, DL, BL, AH, CH, DH, BH,
 		AX = 0, CX, DX, BX, SP, BP, SI, DI
 	};
+	enum Segments
+	{
+		ES = 0, CS = 1, SS = 2, DS = 3, NONE = 4
+	};
 
+	CPU();
+
+	void Step();
+
+	void GUI();
+
+	void SetRamPort(byte* ram, byte* port)
+	{
+		m_ram = ram;
+		m_port = port;
+	}
+
+	void SetInterruptHandler(InterruptHandler* interruptHandler)
+	{
+		m_interruptHandler = interruptHandler;
+	}
+
+	inline byte GetRegB(byte i)
+	{
+		byte* reg8file = (byte*)m_registers;
+		byte _i = (i & 0x3) << 1 | ((i & 0x4) >> 2);
+		return reg8file[_i];
+	}
+	inline word GetRegW(byte i)
+	{
+		return m_registers[i];
+	}
+	inline void SetRegB(byte i, byte x)
+	{
+		byte* reg8file = (byte*)m_registers;
+		byte _i = (i & 0x3) << 1 | ((i & 0x4) >> 2);
+		reg8file[_i] = x;
+	}
+	inline void SetRegW(byte i, word x)
+	{
+		m_registers[i] = x;
+	}
+	inline void SetSegment(byte i, word v)
+	{
+		m_segments[i] = v;
+	}
+	
+	void INT(byte x)
+	{
+		m_interruptHandler->Int(x);
+	}
+
+	word IP;
+
+private:
 	enum DataSize
 	{
 		r8 = 0,
@@ -131,12 +209,12 @@ private:
 			{
 				byte data = GetIMM8();
 				OPERAND_B = data;
-				APPEND_DBG(n2hexstr(data));
+				APPEND_HEX_DBG(data);
 			}
 			else
 			{
 				OPERAND_B = GetIMM16();
-				APPEND_DBG(n2hexstr(OPERAND_B));
+				APPEND_HEX_DBG(OPERAND_B);
 			}
 			break;
 		case RM_IMM:
@@ -147,7 +225,7 @@ private:
 			{
 				byte data = GetIMM8();
 				OPERAND_B = data;
-				APPEND_DBG(n2hexstr(data));
+				APPEND_HEX_DBG(data);
 			}
 			else
 			{
@@ -156,27 +234,22 @@ private:
 					int8_t data = GetIMM8();
 					int16_t data16 = data;
 					OPERAND_B = data16;
-					APPEND_DBG(n2hexstr(data));
+					APPEND_HEX_DBG(data);
 				}
 				else
 				{
 					OPERAND_B = GetIMM16();
-					APPEND_DBG(n2hexstr(OPERAND_B));
+					APPEND_HEX_DBG(OPERAND_B);
 				}
 			}
 			break;
 		}
 	}
-
+	
 	inline word GetSegment(byte i)
 	{
 		APPEND_DBG(m_segNames[i]);
 		return m_segments[i];
-	}
-
-	inline void SetSegment(byte i, word v)
-	{
-		m_segments[i] = v;
 	}
 
 	inline bool Byte()
@@ -199,9 +272,7 @@ private:
 		if (Byte())
 		{
 			APPEND_DBG(m_regNames[i]);
-			byte* reg8file = (byte*)m_registers;
-			byte _i = (i & 0x3) << 1 | ((i & 0x4) >> 2);
-			return reg8file[_i];
+			return GetRegB(i);
 		}
 		else
 		{
@@ -214,9 +285,7 @@ private:
 	{
 		if (Byte())
 		{
-			byte* reg8file = (byte*)m_registers;
-			byte _i = (i & 0x3) << 1 | ((i & 0x4) >> 2);
-			reg8file[_i] = x & 0xFF;
+			SetRegB(i, x & 0xFF);
 		}
 		else
 		{
@@ -278,7 +347,8 @@ private:
 		APPEND_DBG("[");
 		if (m_segmentOverride != NONE)
 		{
-			APPEND_DBG(std::string(m_segNames[m_segmentOverride]) + ": ");
+			APPEND_DBG(m_segNames[m_segmentOverride]);
+			APPEND_DBG(": ");
 		}
 		switch (MODREGRM & RM)
 		{
@@ -288,26 +358,28 @@ private:
 			case 3: reg = (int32_t)m_registers[BP] + m_registers[DI]; offsetreg = BP;  APPEND_DBG("BP + DI"); break;
 			case 4: reg = (int32_t)m_registers[SI]; APPEND_DBG("SI"); break;
 			case 5: reg = (int32_t)m_registers[DI]; APPEND_DBG("DI"); break;
-			case 6: if ((MODREGRM & MOD) != 0) { reg = m_registers[BP]; offsetreg = BP; APPEND_DBG("BP")  } else { reg = GetIMM16(); APPEND_DBG(n2hexstr(reg, 4)); } break;
+			case 6: if ((MODREGRM & MOD) != 0) { reg = m_registers[BP]; offsetreg = BP; APPEND_DBG("BP")  } else { reg = GetIMM16(); APPEND_HEXN_DBG(reg, 4); } break;
 			case 7: reg = m_registers[BX]; APPEND_DBG("BX") break;
 		}
 		if ((MODREGRM & MOD) == 0x40)
 		{
 			int8_t disp8 = GetIMM8();
-			APPEND_DBG(" + 0x" + n2hexstr(disp8));
+			APPEND_DBG(" + 0x");
+			APPEND_HEX_DBG(disp8);
 			disp = disp8; // sign extension
 		}
 		else if ((MODREGRM & MOD) == 0x80)
 		{
 			disp = GetIMM16();
-			APPEND_DBG(" + 0x" + n2hexstr(disp));
+			APPEND_DBG(" + 0x");
+			APPEND_HEX_DBG(disp);
 		}
 		APPEND_DBG("]");
 		if (m_segmentOverride != NONE)
 		{
 			offsetreg = m_segmentOverride;
 		}
-		ADDRESS = reg + disp + (int32_t)m_segments[offsetreg];
+		ADDRESS = reg + disp + (((int32_t)m_segments[offsetreg]) << 4);
 	}
 	
 	inline void StoreResult()
@@ -320,8 +392,10 @@ private:
 			break;
 		case REG_RM:
 			SetReg((MODREGRM & REG) >> 3, RESULT);
+			break;
 		case AXL_IMM:
 			SetReg(0, RESULT);
+			break;
 		}
 	}
 
@@ -416,23 +490,48 @@ private:
 		ClearFlag<CF>();
 		ClearFlag<OF>();
 	}
+	inline void UpdateFlags_OFSFZFAFPF()
+	{
+		UpdateFlags_OF();
+		UpdateFlags_SF();
+		UpdateFlags_ZF();
+		UpdateFlags_AF();
+		UpdateFlags_PF();
+	}
+	inline void Push(word x)
+	{
+		m_registers[SP] -= 2;
+		uint32_t address = ((uint32_t)m_registers[SP]) + (((uint32_t)m_segments[SS]) << 4);
+		m_ram[address] = x & 0xff;
+		m_ram[address + 1] = (x & 0xff00) >> 8;
+	}
+	inline word Pop()
+	{
+		uint32_t address = ((uint32_t)m_registers[SP]) + (((uint32_t)m_segments[SS]) << 4);
+		word x = ((word)m_ram[address]) | (((word)m_ram[address + 1]) << 8);
+		m_registers[SP] += 2;
+		return x;
+	}
 
-	void INT(byte n);
+	void AddLog(const char* fmt, ...);
 
 	const char* const m_segNames[4] = { "ES", "CS", "SS", "DS" };
 	const char* const m_regNames[2 * 8] = { "AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH", "AX","CX", "DX", "BX", "SP", "BP", "SI", "DI" };
+	const char* const m_flagNames[2 * 8] = { "CF", "", "PF", "", "AF", "", "ZF", "SF", "TF","IF", "DF", "OF", "", "", "NT", "" };
 
 	word m_registers[8];
+	word m_old_registers[8];
 	word m_segments[4];
+	word m_old_segments[4];
 
 	byte* m_ram;
 	byte* m_port;
 	word m_flags;
+	word m_old_flags;
 
 	byte ADDRESS_METHOD;
 	byte MODREGRM;
 	int32_t ADDRESS;
-	word IP;
 
 	byte OPCODE1;
 	byte OPCODE2;
@@ -446,5 +545,13 @@ private:
 	bool REPN;
 	bool REP;
 
-	std::string m_disasm;
+	InterruptHandler* m_interruptHandler;
+
+	char dbg_cmd_address[128];
+	char dbg_cmd_name[128];
+	char* dbg_args_ptr;
+	char dbg_args[128];
+
+	ImGuiTextBuffer m_log;
+	bool m_scrollToBottom;
 };
