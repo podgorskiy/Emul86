@@ -209,33 +209,124 @@ void Application::SetBIOSVars()
 	StoreB(0x40, VIDEO_MOD, 0x0000); // Current active video mode
 
 	StoreW(0x40, 0x004a, 80); // Screen width in text columns
+
+	StoreW(0x0, 0x78, 0xefc7); // pointer to diskette_param_table
+
+	uint8_t diskette_param_table[] = 
+	{
+		0xAF,
+		0x02,// head load time 0000001, DMA used
+		0x25,
+		0x02,
+		  18,
+		0x1B,
+		0xFF,
+		0x6C,
+		0xF6,
+		0x0F,
+		0x08,
+		  79, // maximum track
+		   0, // data transfer rate
+		   4  // drive type in cmos
+	};
+	memcpy(m_ram + 0xefc7, diskette_param_table, sizeof(diskette_param_table));
 }
+
+#define SET_AH(b) m_cpu.SetRegB(CPU::AH, b)
+#define GET_AH() m_cpu.GetRegB(CPU::AH)
+#define GET_AL() m_cpu.GetRegB(CPU::AL)
+#define SET_DISK_RET_STATUS(status) StoreB(0x0040, 0x0074, status)
+#define SET_CF() m_cpu.SetFlag<CPU::CF>()
+#define CLEAR_CF() m_cpu.ClearFlag<CPU::CF>()
 
 void Application::Int(CPU::byte x)
 {
 	CPU::byte function;
 	CPU::byte arg;
+	CPU::byte status;
 	switch (x)
 	{
 	// Video Services
 	case 0x10:
-		function = m_cpu.GetRegB(CPU::AH);
-		arg = m_cpu.GetRegB(CPU::AL);
+		function = GET_AH();
+		arg = GET_AL();
 		switch (function)
 		{
 		//Set Video Mode
 		case 0x00:
 			StoreB(0x40, VIDEO_MOD, arg);
+		case 0x0E:
+			printf("%c", arg);
+			break;
+		default:
+			ASSERT(false, "Unknown int10 function: 0x%s\n", n2hexstr(function).c_str());
 			break;
 		}
-		break;
 
 	// Conventional Memory Size
 	case 0x12:
 		m_cpu.SetRegW(CPU::AX, MEMORY_SIZE_KB);
 		break;
+	
+	// disk I/O service
+	case 0x13:
+		function = GET_AH();
+		switch (function)
+		{
+		case 0x00: /* disk controller reset */
+			goto int13_success;
+			break;
+		case 0x01: /* read disk status */
+			status = GetB(0x0040, 0x0074); 
+			SET_AH(status);
+			SET_DISK_RET_STATUS(0);
+			/* set CF if error status read */
+			if (status) SET_CF();
+			else CLEAR_CF();
+			return; 
+		case 0x04: // verify disk sectors
+		case 0x02: // read disk sectors
+			/*
+			AL = number of sectors to read	(1-128 dec.)
+			CH = track/cylinder number  (0-1023 dec., see below)
+			CL = sector number  (1-17 dec.)
+			DH = head number  (0-15 dec.)
+			DL = drive number (0=A:, 1=2nd floppy, 80h=drive 0, 81h=drive 1)
+			ES:BX = pointer to buffer
+			*/
+			{
+				int DiskNo = m_cpu.GetRegB(CPU::DL);
+				int HeadNo = m_cpu.GetRegB(CPU::DH);
+				int TrackNo = m_cpu.GetRegB(CPU::CH);
+				int SectorNo = m_cpu.GetRegB(CPU::CL);
+				int SectorNum = m_cpu.GetRegB(CPU::AL);
+				int ADDR = (((int)m_cpu.GetSeg(CPU::ES)) << 4) + m_cpu.GetRegW(CPU::BX);
+
+				int LBA = (TrackNo * m_disk.GetBiosBlock().numHeads + HeadNo) * m_disk.GetBiosBlock().secPerTrk + SectorNo - 1;
+				ASSERT(LBA <= m_disk.GetBiosBlock().totSec16, "Error int13");
+				m_disk.Read((char *)m_ram + ADDR, 512 * LBA, 512 * SectorNum);
+				goto int13_success;
+			}
+
+		default:
+			FAIL("Unknown int13 function: 0x%s\n", n2hexstr(function).c_str());
+		}
+	int13_fail:
+		SET_AH(0x01); // defaults to invalid function in AH or invalid parameter
+	int13_fail_noah:
+		SET_DISK_RET_STATUS(GET_AH());
+	int13_fail_nostatus:
+		SET_CF();     // error occurred
+		return;
+
+	int13_success:
+		SET_AH(0x00); // no error
+	int13_success_noah:
+		SET_DISK_RET_STATUS(0x00);
+		CLEAR_CF(); // no error
+		break;
 
 	default:
-		FAIL("Unknown interrupt: 0x%s\n", n2hexstr(x).c_str());
+		ASSERT(false, "Unknown interrupt: 0x%s\n", n2hexstr(x).c_str());
 	}
 }

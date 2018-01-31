@@ -23,6 +23,11 @@ inline char* n2hexstr(char* dst, I w, size_t hex_len = sizeof(I) << 1)
 	return &(*(dst + hex_len) = '\x0');
 }
 
+inline uint32_t _(uint16_t seg, uint16_t off)
+{
+	return (((uint32_t)seg) << 4) + off;
+}
+
 #ifdef _DEBUG
 #define APPEND_DBG(X) \
 dbg_args_ptr = strcpy(dbg_args_ptr, X) + strlen(X);
@@ -109,6 +114,10 @@ public:
 	{
 		m_registers[i] = x;
 	}
+	inline word GetSeg(byte i)
+	{
+		return m_segments[i];
+	}
 	inline void SetSegment(byte i, word v)
 	{
 		m_segments[i] = v;
@@ -118,32 +127,6 @@ public:
 	{
 		m_interruptHandler->Int(x);
 	}
-
-	word IP;
-
-private:
-	enum DataSize
-	{
-		r8 = 0,
-		r16 = 1,
-		rMask = r8 | r16
-	};
-
-	enum DataDirection
-	{
-		RM_REG = 0 << 1,
-		REG_RM = 1 << 1,
-		AXL_IMM = 2 << 1,
-		RM_IMM = 3 << 1,
-		DataDirectionMask = RM_REG | REG_RM | AXL_IMM | RM_IMM
-	};
-
-	enum ModRegRm
-	{
-		MOD = 0xC0,
-		REG = 0x38,
-		RM = 0x07
-	};
 
 	enum Flags
 	{
@@ -185,6 +168,59 @@ private:
 	{
 		m_flags &= ~(1 << F);
 	}
+
+	inline word GetReg(byte i)
+	{
+		if (Byte())
+		{
+			APPEND_DBG(m_regNames[i]);
+			return GetRegB(i);
+		}
+		else
+		{
+			APPEND_DBG(m_regNames[i + 8]);
+			return m_registers[i];
+		}
+	}
+
+	inline void SetReg(byte i, word x)
+	{
+		if (Byte())
+		{
+			SetRegB(i, x & 0xFF);
+		}
+		else
+		{
+			m_registers[i] = x;
+		}
+	}
+
+	word IP;
+
+private:
+	enum DataSize
+	{
+		r8 = 0,
+		r16 = 1,
+		rMask = r8 | r16
+	};
+
+	enum DataDirection
+	{
+		RM_REG = 0 << 1,
+		REG_RM = 1 << 1,
+		AXL_IMM = 2 << 1,
+		RM_IMM = 3 << 1,
+		DataDirectionMask = RM_REG | REG_RM | AXL_IMM | RM_IMM
+	};
+
+	enum ModRegRm
+	{
+		MOD = 0b11000000,
+		REG = 0b00111000,
+		RM  = 0b00000111
+	};
+
 	
 	inline void PrepareOperands(bool signextend = false)
 	{
@@ -267,31 +303,16 @@ private:
 		SetReg((MODREGRM & REG) >> 3, x);
 	}
 
-	inline word GetReg(byte i)
+	inline uint8_t& MemoryByte(uint32_t address)
 	{
-		if (Byte())
-		{
-			APPEND_DBG(m_regNames[i]);
-			return GetRegB(i);
-		}
-		else
-		{
-			APPEND_DBG(m_regNames[i + 8]);
-			return m_registers[i];
-		}
+		return *(m_ram + address);
 	}
 
-	inline void SetReg(byte i, word x)
+	inline uint16_t& MemoryWord(uint32_t address)
 	{
-		if (Byte())
-		{
-			SetRegB(i, x & 0xFF);
-		}
-		else
-		{
-			m_registers[i] = x;
-		}
+		return *reinterpret_cast<uint16_t*>(m_ram + address);
 	}
+
 
 	inline word GetRM()
 	{
@@ -305,11 +326,11 @@ private:
 
 			if (Byte())
 			{
-				return m_ram[ADDRESS];
+				return MemoryByte(ADDRESS);
 			}
 			else
 			{
-				return m_ram[ADDRESS] | (m_ram[ADDRESS + 1] << 8);
+				return MemoryWord(ADDRESS);
 			}
 		}
 	}
@@ -329,12 +350,11 @@ private:
 
 			if (Byte())
 			{
-				m_ram[ADDRESS] = x & 0xFF;
+				MemoryByte(ADDRESS) = x;
 			}
 			else
 			{
-				m_ram[ADDRESS] = x & 0xFF;
-				m_ram[ADDRESS + 1] = (x & 0xFF00) >> 8;
+				MemoryWord(ADDRESS) = x;
 			}
 		}
 	}
@@ -379,7 +399,7 @@ private:
 		{
 			offsetreg = m_segmentOverride;
 		}
-		ADDRESS = reg + disp + (((int32_t)m_segments[offsetreg]) << 4);
+		ADDRESS = _(m_segments[offsetreg], reg + disp);
 	}
 	
 	inline void StoreResult()
@@ -501,19 +521,16 @@ private:
 	inline void Push(word x)
 	{
 		m_registers[SP] -= 2;
-		uint32_t address = ((uint32_t)m_registers[SP]) + (((uint32_t)m_segments[SS]) << 4);
-		m_ram[address] = x & 0xff;
-		m_ram[address + 1] = (x & 0xff00) >> 8;
+		uint32_t address = _(m_segments[SS], m_registers[SP]);
+		MemoryWord(address) = x;
 	}
 	inline word Pop()
 	{
-		uint32_t address = ((uint32_t)m_registers[SP]) + (((uint32_t)m_segments[SS]) << 4);
-		word x = ((word)m_ram[address]) | (((word)m_ram[address + 1]) << 8);
+		uint32_t address = _(m_segments[SS], m_registers[SP]);
+		word x = MemoryWord(address);
 		m_registers[SP] += 2;
 		return x;
 	}
-
-	void AddLog(const char* fmt, ...);
 
 	const char* const m_segNames[4] = { "ES", "CS", "SS", "DS" };
 	const char* const m_regNames[2 * 8] = { "AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH", "AX","CX", "DX", "BX", "SP", "BP", "SI", "DI" };

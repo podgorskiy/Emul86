@@ -18,7 +18,7 @@ static MemoryEditor mem_edit;
 }
 
 #define UNKNOWN_OPCODE(X) \
-			FAIL("Unknown opcode: 0x%s\n", n2hexstr(X).c_str());
+			ASSERT(false, "Unknown opcode: 0x%s\n", n2hexstr(X).c_str());
 
 char* print_address(char* dst, uint16_t segment, uint16_t offset)
 {
@@ -236,6 +236,7 @@ opcode_:
 			OPERAND_B = -OPERAND_B;
 			RESULT = OPERAND_A + OPERAND_B;
 			UpdateFlags_CFOFAF();
+			UpdateFlags_SFZFPF();
 			break;
 		}
 		break;
@@ -601,42 +602,38 @@ opcode_:
 
 		case 0x06:
 			CMD_NAME("DIV");
-			OPERAND_A = (uint16_t)GetReg(0);
-			APPEND_DBG(", ");
-			OPERAND_B = (uint16_t)GetRM();
-			RESULT = OPERAND_A * OPERAND_B;
 			if (Byte())
 			{
-				uint32_t tmp = (uint16_t)m_registers[0];
-				RESULT = tmp / OPERAND_B;
-				m_registers[0] = RESULT;
+				OPERAND_A = (uint16_t)GetReg(0);
+				APPEND_DBG(", ");
+				OPERAND_B = (uint16_t)GetRM();
+				m_registers[0] = OPERAND_A / OPERAND_B + ((OPERAND_A % OPERAND_B) << 8);
 			}
 			else
 			{
-				uint32_t tmp = (uint32_t)m_registers[0] + (uint32_t)(m_registers[DX] << 16);
-				RESULT = tmp / OPERAND_B;
-				m_registers[0] = RESULT;
-				m_registers[DX] = RESULT >> 16;
+				OPERAND_A = (uint16_t)GetReg(0) + ((uint16_t)GetReg(DX) << 16);
+				APPEND_DBG(", ");
+				OPERAND_B = (uint16_t)GetRM();
+				m_registers[0] = OPERAND_A / OPERAND_B;
+				m_registers[DX] = OPERAND_A % OPERAND_B;
 			}
 			break;
 		case 0x07:
 			CMD_NAME("IDIV");
-			OPERAND_A = (int16_t)GetReg(0);
-			APPEND_DBG(", ");
-			OPERAND_B = (int16_t)GetRM();
-			RESULT = OPERAND_A * OPERAND_B;
 			if (Byte())
 			{
-				int32_t tmp = m_registers[0];
-				RESULT = tmp / OPERAND_B;
-				m_registers[0] = RESULT;
+				OPERAND_A = (int16_t)GetReg(0);
+				APPEND_DBG(", ");
+				OPERAND_B = (int16_t)GetRM();
+				m_registers[0] = OPERAND_A / OPERAND_B + ((OPERAND_A % OPERAND_B) << 8);
 			}
 			else
 			{
-				int32_t tmp = (int32_t)m_registers[0] + (int32_t)(m_registers[DX] << 16);
-				RESULT = tmp / OPERAND_B;
-				m_registers[0] = RESULT;
-				m_registers[DX] = RESULT >> 16;
+				OPERAND_A = (int16_t)GetReg(0) + ((int16_t)GetReg(DX) << 16);
+				APPEND_DBG(", ");
+				OPERAND_B = (int16_t)GetRM();
+				m_registers[0] = OPERAND_A / OPERAND_B;
+				m_registers[DX] = OPERAND_A % OPERAND_B;
 			}
 			break;
 
@@ -653,7 +650,7 @@ opcode_:
 
 		if (OPCODE2 & 0x02)
 		{
-			times = GetReg(CL) & 0x1F;
+			times = GetRegB(CL) & 0x1F;
 		}
 
 		switch (OPCODE2)
@@ -710,13 +707,12 @@ opcode_:
 
 			if (Byte())
 			{
-				m_ram[ADDRESS] = OPERAND_A & 0xFF;
+				MemoryByte(ADDRESS) = OPERAND_A;
 				m_registers[DI] += TestFlag<DF>() == 0 ? 1 : -1;
 			}
 			else
 			{
-				m_ram[ADDRESS] = OPERAND_A & 0xFF;
-				m_ram[ADDRESS + 1] = (OPERAND_A & 0xFF00) >> 8;
+				MemoryWord(ADDRESS) = OPERAND_A;
 				m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
 			}
 
@@ -726,6 +722,7 @@ opcode_:
 				*(dbg_args_ptr = dbg_args) = 0;
 #endif
 			}
+			m_registers[CX]--;
 		}
 
 		break;
@@ -735,12 +732,199 @@ opcode_:
 		IP = Pop();
 		break;
 
+	case 0xC5:
+		ADDRESS_METHOD = r16;
+		CMD_NAME("LDS");
+		MODREGRM = ExtractByte();
+		GetReg();
+		APPEND_DBG(", ");
+		SetRM_Address();
+		OPERAND_A = MemoryWord(ADDRESS);
+		OPERAND_B = MemoryWord(ADDRESS + 2);
+		SetReg(OPERAND_A);
+		SetSegment(DS, OPERAND_B);
+		break;
+
+	case 0xC4:
+		ADDRESS_METHOD = r16;
+		CMD_NAME("LES");
+		MODREGRM = ExtractByte();
+		GetReg();
+		APPEND_DBG(", ");
+		SetRM_Address();
+		OPERAND_A = MemoryWord(ADDRESS);
+		OPERAND_B = MemoryWord(ADDRESS + 2);
+		SetReg(OPERAND_A);
+		SetSegment(ES, OPERAND_B);
+		break;
+
+	case 0xA4: case 0xA5:
+		if (REP)
+		{
+			times = m_registers[CX];
+		}
+		for (int i = 0; i < times; ++i)
+		{
+			CMD_NAME("MOVS");
+			byte src_offsetreg = DS;
+			if (m_segmentOverride != NONE)
+			{
+				src_offsetreg = m_segmentOverride;
+			}
+			word src_seg = GetSegment(src_offsetreg);
+			APPEND_DBG(":");
+			word src_offset = GetReg(SI);
+			APPEND_DBG(", ");
+			word dst_seg = GetSegment(ES);
+			APPEND_DBG(":");
+			word dst_offset = GetReg(DI);
+			if (OPCODE1 & 1)
+			{
+				MemoryWord(_(dst_seg, dst_offset)) = MemoryWord(_(src_seg, src_offset));
+				m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
+				m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
+			}
+			else
+			{
+				MemoryByte(_(dst_seg, dst_offset)) = MemoryByte(_(src_seg, src_offset));
+				m_registers[SI] += TestFlag<DF>() == 0 ? 1 : -1;
+				m_registers[DI] += TestFlag<DF>() == 0 ? 1 : -1;
+			}
+			if (i != times - 1)
+			{
+	#ifdef _DEBUG
+				*(dbg_args_ptr = dbg_args) = 0;
+	#endif
+			}
+			m_registers[CX]--;
+		}
+		break;
+
+		case 0xA0: case 0xA1:
+		{
+			ADDRESS_METHOD = OPCODE1 & 1;
+			CMD_NAME("MOV");
+			APPEND_DBG(OPCODE1 & 1 ? "AX" : "AL");
+			APPEND_DBG(", [");
+
+			byte src_offsetreg = DS;
+			if (m_segmentOverride != NONE)
+			{
+				src_offsetreg = m_segmentOverride;
+			}
+			word src_seg = GetSegment(src_offsetreg);
+			word src_offset = GetIMM16();
+			APPEND_DBG(":");
+			APPEND_HEX_DBG(src_offset);
+			APPEND_DBG("]");
+			if (OPCODE1 & 1)
+			{
+				OPERAND_A = MemoryWord(_(src_seg, src_offset));
+				SetReg(AX, OPERAND_A);
+			}
+			else
+			{
+				OPERAND_A = MemoryByte(_(src_seg, src_offset));
+				SetReg(AL, OPERAND_A);
+			}
+		}
+		break;
+
+		case 0xA2: case 0xA3:
+		{
+			ADDRESS_METHOD = OPCODE1 & 1;
+			CMD_NAME("MOV");
+			APPEND_DBG("[");
+			byte dst_offsetreg = DS;
+			if (m_segmentOverride != NONE)
+			{
+				dst_offsetreg = m_segmentOverride;
+			}
+			word dst_seg = GetSegment(dst_offsetreg);
+			word dst_offset = GetIMM16();
+			APPEND_DBG(":");
+			APPEND_HEX_DBG(dst_offset);
+			APPEND_DBG("], ");
+
+			APPEND_DBG(OPCODE1 & 1 ? "AX" : "AL");
+
+			if (OPCODE1 & 1)
+			{
+				MemoryWord(_(dst_seg, dst_offset)) = GetReg(AX);
+			}
+			else
+			{
+				MemoryByte(_(dst_seg, dst_offset)) = GetReg(AL);
+			}
+		}
+		break;
+
+		case 0x86: case 0x87:
+			ADDRESS_METHOD = OPCODE1 & 1;
+			CMD_NAME("XCHG");
+			MODREGRM = ExtractByte();
+			OPERAND_A = GetReg();
+			APPEND_DBG(", ");
+			OPERAND_B = GetRM();
+			SetReg(OPERAND_B);
+			SetRM(OPERAND_A);
+		break;
+
+		case 0xA6: case 0xA7:
+			if (REP)
+			{
+				times = m_registers[CX];
+			}
+			for (int i = 0; i < times; ++i)
+			{
+				CMD_NAME("CMPS");
+				byte src_offsetreg = DS;
+				if (m_segmentOverride != NONE)
+				{
+					src_offsetreg = m_segmentOverride;
+				}
+				word src_seg = GetSegment(src_offsetreg);
+				APPEND_DBG(":");
+				word src_offset = GetReg(SI);
+				APPEND_DBG(", ");
+				word dst_seg = GetSegment(ES);
+				APPEND_DBG(":");
+				word dst_offset = GetReg(DI);
+				if (OPCODE1 & 1)
+				{
+					OPERAND_A = MemoryWord(_(src_seg, src_offset));
+					OPERAND_B = MemoryWord(_(dst_seg, dst_offset));
+					RESULT = OPERAND_A - OPERAND_B;
+					UpdateFlags_CFOFAF();
+					UpdateFlags_SFZFPF();
+					m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
+					m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
+				}
+				else
+				{
+					OPERAND_A = MemoryByte(_(src_seg, src_offset));
+					OPERAND_B = MemoryByte(_(dst_seg, dst_offset));
+					RESULT = OPERAND_A - OPERAND_B;
+					UpdateFlags_CFOFAF();
+					UpdateFlags_SFZFPF();
+					m_registers[SI] += TestFlag<DF>() == 0 ? 1 : -1;
+					m_registers[DI] += TestFlag<DF>() == 0 ? 1 : -1;
+				}
+				if (i != times - 1)
+				{
+#ifdef _DEBUG
+					*(dbg_args_ptr = dbg_args) = 0;
+#endif
+				}
+				m_registers[CX]--;
+			}
+			break;
 	default:
 		UNKNOWN_OPCODE(OPCODE1);
 	}
 
 #ifdef _DEBUG
-	AddLog("%s %s %s\n", dbg_cmd_address, dbg_cmd_name, dbg_args);
+	m_log.appendf("%s %s %s\n", dbg_cmd_address, dbg_cmd_name, dbg_args);
 #endif
 }
 
@@ -807,14 +991,4 @@ void CPU::GUI()
 	ImGui::End();
 
 	mem_edit.DrawWindow("Memory Editor", m_ram, 0x100000);
-}
-
-void CPU::AddLog(const char* fmt, ...)
-{
-	int old_size = m_log.size();
-	va_list args;
-	va_start(args, fmt);
-	m_log.appendv(fmt, args);
-	va_end(args);
-	m_scrollToBottom = true;
 }
