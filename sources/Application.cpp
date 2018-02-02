@@ -145,7 +145,10 @@ void Application::Update()
 
 	if (doStep)
 	{
-		m_cpu.Step();
+		for (int i = 0; i < 1 && !m_int16_0; ++i)
+		{
+			m_cpu.Step();
+		}
 	}
 
 	m_cpu.GUI();
@@ -347,6 +350,12 @@ void Application::Int(CPU::byte x)
 				SET_CL(5);
 				break;
 			}
+		case 0x05:
+			// Select active display page
+			{
+				StoreB(0x40, ACTIVE_DISPLAY_PAGE, arg);
+			}
+			break;
 		case 0x06:
 			{
 				int n = GET_AL();
