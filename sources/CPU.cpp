@@ -130,6 +130,7 @@ opcode_:
 	byte reg = 0;
 	bool condition = false;
 	uint16_t MSB_MASK = 0;
+	bool tempCF = false;
 
 	switch (OPCODE1)
 	{
@@ -650,6 +651,19 @@ opcode_:
 		SetRegW(0, OPERAND_A);
 		break;
 
+	case 0x99:
+		CMD_NAME("CWD");
+		OPERAND_A = GetRegW(0);
+		if (OPERAND_A & 0x8000)
+		{
+			SetRegW(DX, 0xFFFF);
+		}
+		else
+		{
+			SetRegW(DX, 0x0000);
+		}
+		break;
+
 	case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x47:
 		CMD_NAME("INC");
 		ADDRESS_METHOD = r16;
@@ -726,6 +740,16 @@ opcode_:
 	case 0x1E:
 		CMD_NAME("PUSH DS");
 		Push(m_segments[DS]);
+		break;
+
+	case 0x9C:
+		CMD_NAME("PUSHF");
+		Push(m_flags);
+		break;
+
+	case 0x9D:
+		CMD_NAME("POPF");
+		m_flags = Pop();
 		break;
 
 	case 0x0F:
@@ -809,6 +833,7 @@ opcode_:
 		switch (OPCODE2)
 		{
 		case 0x00:
+		case 0x01:
 			CMD_NAME("TEST");
 			OPERAND_A = GetRM();
 			APPEND_DBG(", ");
@@ -950,6 +975,18 @@ opcode_:
 
 		switch (OPCODE2)
 		{
+		case 0x00:
+			CMD_NAME("ROL");
+			break;
+		case 0x01:
+			CMD_NAME("ROR");
+			break;
+		case 0x02:
+			CMD_NAME("RCL");
+			break;
+		case 0x03:
+			CMD_NAME("RCR");
+			break;
 		case 0x04:
 			CMD_NAME("SHL");
 			break;
@@ -967,11 +1004,34 @@ opcode_:
 		}
 		OPERAND_A = GetRM();
 		RESULT = OPERAND_A;
-
+		
 		for (int i = 0; i < times; ++i)
 		{
 			switch (OPCODE2)
 			{
+			case 0x00:
+				SetFlag<CF>(MSB_MASK & RESULT);
+				RESULT = RESULT * 2 + TestFlag<CF>();
+				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != TestFlag<CF>());
+				break;
+			case 0x01:
+				SetFlag<CF>(1 & RESULT);
+				RESULT = RESULT / 2 + TestFlag<CF>() * MSB_MASK;
+				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != (((MSB_MASK >> 1) & RESULT) != 0));
+				break;
+			case 0x02:
+				tempCF = MSB_MASK & RESULT;
+				RESULT = RESULT * 2 + TestFlag<CF>();
+				SetFlag<CF>(tempCF);
+				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != TestFlag<CF>());
+				break;
+			case 0x03:
+				tempCF = 1 & RESULT;
+				SetFlag<CF>(1 & RESULT);
+				RESULT = RESULT / 2 + TestFlag<CF>() * MSB_MASK;
+				SetFlag<CF>(tempCF);
+				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != (((MSB_MASK >> 1) & RESULT) != 0));
+				break;
 			case 0x04:
 				SetFlag<CF>(MSB_MASK & RESULT);
 				RESULT = RESULT * 2;
