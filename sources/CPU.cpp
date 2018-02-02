@@ -1303,6 +1303,19 @@ opcode_:
 			SetRM(OPERAND_A);
 		break;
 
+		case 0x84: case 0x85:
+			ADDRESS_METHOD = OPCODE1 & 1;
+			CMD_NAME("TEST");
+			MODREGRM = ExtractByte();
+			OPERAND_A = GetReg();
+			APPEND_DBG(", ");
+			OPERAND_B = GetRM();
+			RESULT = OPERAND_A & OPERAND_B;
+			UpdateFlags_SFZFPF();
+			SetFlag<CF>(false);
+			SetFlag<OF>(false);
+			break;
+
 		case 0xA6: case 0xA7:
 			if (REP || REPN)
 			{
@@ -1385,6 +1398,8 @@ opcode_:
 			}
 			RESULT = OPERAND_A & OPERAND_B;
 			UpdateFlags_SFZFPF();
+			SetFlag<CF>(false);
+			SetFlag<OF>(false);
 			break;
 	default:
 		UNKNOWN_OPCODE(OPCODE1);
@@ -1401,13 +1416,13 @@ opcode_:
 
 	for (int i = 0; i < 8; ++i)
 	{
-		n2hexstr(buff, m_registers[i]); fprintf(logfile, buff);
+		//n2hexstr(buff, m_registers[i]); fprintf(logfile, buff);
 	}
 	for (int i = 0; i < 4; ++i)
 	{
-		n2hexstr(buff, m_segments[i]); fprintf(logfile, buff);
+		//n2hexstr(buff, m_segments[i]); fprintf(logfile, buff);
 	}
-	fprintf(logfile, "\n");
+	//fprintf(logfile, "\n");
 }
 
 void CPU::Interrupt(int n)
