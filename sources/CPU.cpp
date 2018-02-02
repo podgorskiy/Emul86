@@ -1,9 +1,23 @@
 #include "CPU.h"
 #include "_assert.h"
 #include <imgui.h>
+#include <stdio.h>
 #include "imgui_memory_editor.h"
 
 static MemoryEditor mem_edit;
+static bool logging_state = false;
+const uint8_t parity[0x100] = {
+	1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
+	0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
+	0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
+	1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
+	0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
+	1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
+	1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
+	0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1
+};
+
+FILE* logfile;
 
 #define CJMP \
 {\
@@ -14,6 +28,17 @@ static MemoryEditor mem_edit;
 	if (condition) \
 	{ \
 		IP += rel8; \
+	} break;\
+}
+#define CJMP16 \
+{\
+	int16_t rel16 = GetIMM16(); \
+	APPEND_HEX_DBG(m_segments[CS]);\
+	APPEND_DBG(":"); \
+	APPEND_HEX_DBG(IP); \
+	if (condition) \
+	{ \
+		IP += rel16; \
 	} break;\
 }
 
@@ -31,6 +56,7 @@ CPU::CPU()
 {
 	memset(m_segments, 0, sizeof(m_segments));
 	memset(m_registers, 0, sizeof(m_registers));
+	m_registers[SP] = 0xFFD6;
 	IP = 0;
 	m_segments[CS] = 0x10;
 	m_flags = 0;
@@ -40,13 +66,15 @@ CPU::CPU()
 	dbg_args_ptr = dbg_args;
 	m_scrollToBottom = true;
 	mem_edit.GotoAddr = 0x7C00;
+	logfile = fopen("log.txt", "w");
 }
 
 void CPU::Step()
 {
-#ifdef _DEBUG
-	print_address(dbg_cmd_address, m_segments[CS], IP);
-#endif
+	if (IP == 0x1142)
+	{
+		printf("");
+	}
 	dbg_args_ptr = dbg_args;
 	dbg_args[0] = 0;
 	
@@ -59,7 +87,8 @@ void CPU::Step()
 	REP = false;
 	m_segmentOverride = NONE;
 	int times = 1;
-
+	bool sizeOverride = false;
+	bool addressOverride = false;
 	// Read Instruction Prefixes. Up to four prefixes of 1 - byte each (optional
 	while (true)
 	{
@@ -74,6 +103,8 @@ void CPU::Step()
 		case 0x36: m_segmentOverride = SS; break;
 		case 0x3E: m_segmentOverride = DS; break;
 		case 0x26: m_segmentOverride = ES; break;
+		case 0x66: sizeOverride = true; break;
+		case 0x67: addressOverride = true; break;
 			//case 0x66: /* operand SIZE override */ break;
 			//case 0x67: /* address SIZE override */ break;
 			//case 0x0F: /* SIMD stream */ break;
@@ -84,6 +115,13 @@ void CPU::Step()
 	}
 
 opcode_:
+#ifdef _DEBUG
+	print_address(dbg_cmd_address, m_segments[CS], (uint16_t)(IP-1));
+#endif
+	char buff[1024];
+	n2hexstr(buff, m_segments[CS]); fprintf(logfile, buff);
+	n2hexstr(buff, (uint16_t)(IP - 1)); fprintf(logfile, buff);
+
 	mem_edit.HighlightMin = (((uint32_t)m_segments[CS]) << 4) + IP - 1;
 	mem_edit.HighlightMax = mem_edit.HighlightMin + 1;
 
@@ -91,6 +129,7 @@ opcode_:
 	byte data = 0;
 	byte reg = 0;
 	bool condition = false;
+	uint16_t MSB_MASK = 0;
 
 	switch (OPCODE1)
 	{
@@ -107,8 +146,7 @@ opcode_:
 		CMD_NAME("ADC");
 		ADDRESS_METHOD = OPCODE1 & 7;
 		PrepareOperands();
-		OPERAND_B += TestFlag<CF>() ? 1 : 0;
-		RESULT = OPERAND_A + OPERAND_B;
+		RESULT = OPERAND_A + OPERAND_B + (TestFlag<CF>() ? 1 : 0);
 		UpdateFlags_CFOFAF();
 		UpdateFlags_SFZFPF();
 		StoreResult();
@@ -194,8 +232,7 @@ opcode_:
 			break;
 		case 0x02:
 			CMD_NAME("ADC");
-			OPERAND_B += TestFlag<CF>() ? 1 : 0;
-			RESULT = OPERAND_A + OPERAND_B;
+			RESULT = OPERAND_A + OPERAND_B + (TestFlag<CF>() ? 1 : 0);
 			UpdateFlags_CFOFAF();
 			UpdateFlags_SFZFPF();
 			StoreResult();
@@ -427,6 +464,18 @@ opcode_:
 	case 0x7F:
 		CMD_NAME("JNLE"); condition = !TestFlag<ZF>() && (TestFlag<SF>() == TestFlag<OF>()); CJMP
 
+	case 0xEA:
+		CMD_NAME("JMP");
+		{
+			uint16_t new_IP = GetIMM16();
+			uint16_t new_CS = GetIMM16();
+			IP = new_IP;
+			m_segments[CS] = new_CS;
+			APPEND_HEX_DBG(new_CS);
+			APPEND_DBG(":");
+			APPEND_HEX_DBG(new_IP);
+		}
+		break;
 	case 0xEB:
 		CMD_NAME("JMP");
 		IP += (int8_t)GetIMM8();
@@ -441,6 +490,11 @@ opcode_:
 		APPEND_DBG(":");
 		APPEND_HEX_DBG(IP);
 		break;
+	case 0xE3:
+		CMD_NAME("JCXZ");
+		condition = m_registers[CX] == 0; 
+		CJMP
+		break;
 	case 0xE8:
 		CMD_NAME("CALL");
 		{
@@ -453,10 +507,92 @@ opcode_:
 		}
 		break;
 
+	case 0x9A:
+		CMD_NAME("CALL");
+		{
+			uint16_t new_IP = GetIMM16();
+			uint16_t new_CS = GetIMM16();
+			Push(m_segments[CS]);
+			Push(IP);
+			IP = new_IP;
+			m_segments[CS] = new_CS;
+			APPEND_HEX_DBG(new_CS);
+			APPEND_DBG(":");
+			APPEND_HEX_DBG(new_IP);
+		}
+		break;
+
+	case 0xE4: case 0xE5:
+		CMD_NAME("IN");
+		ADDRESS_METHOD = OPCODE1 & 1;
+		ADDRESS = GetIMM8();
+		if (Byte())
+		{
+			SetReg(0, PortByte(ADDRESS));
+		}
+		else
+		{
+			SetReg(0, PortWord(ADDRESS));
+		}
+		break;
+
+	case 0xE6: case 0xE7:
+		CMD_NAME("OUT");
+		ADDRESS_METHOD = OPCODE1 & 1;
+		ADDRESS = GetIMM8();
+		if (Byte())
+		{
+			PortByte(ADDRESS) = GetReg(0);
+		}
+		else
+		{
+			PortWord(ADDRESS) = GetReg(0);
+		}
+		break;
+
+	case 0x6E:
+		CMD_NAME("OUTS");
+		{
+			byte offsetreg = DS;
+			if (m_segmentOverride != NONE)
+			{
+				offsetreg = m_segmentOverride;
+			}
+			PortByte(GetReg(DX)) = MemoryByte(_(GetSegment(offsetreg), GetReg(SI)));
+		}
+		break;
+
+	case 0x6F: 
+		CMD_NAME("OUTS");
+		{
+			byte offsetreg = DS;
+			if (m_segmentOverride != NONE)
+			{
+				offsetreg = m_segmentOverride;
+			}
+			PortWord(GetReg(DX)) = MemoryWord(_(GetSegment(offsetreg), GetReg(SI)));
+		}
+		break;
+
+	case 0x6C:
+		CMD_NAME("INS");
+		{
+			MemoryByte(_(GetSegment(ES), GetReg(DI))) = PortByte(GetReg(DX));
+		}
+		break;
+
+	case 0x6D:
+		CMD_NAME("INS");
+		{
+			MemoryWord(_(GetSegment(ES), GetReg(DI))) = PortWord(GetReg(DX));
+		}
+		break;
+
 	case 0xFE: case 0xFF:
 		ADDRESS_METHOD = OPCODE1 & 1;
 		MODREGRM = ExtractByte();
 		OPERAND_A = GetRM();
+		OPERAND_B = MemoryWord(ADDRESS + 2);
 
 		OPCODE2 = (MODREGRM & REG) >> 3;
 
@@ -476,7 +612,29 @@ opcode_:
 			UpdateFlags_OFSFZFAFPF();
 			SetRM(RESULT);
 			break;
-
+		case 0x02:
+			CMD_NAME("CALL");
+			Push(IP);
+			IP = OPERAND_A;
+			APPEND_DBG("CS:");
+			APPEND_HEX_DBG(IP);
+			break;
+		case 0x03:
+			CMD_NAME("CALL");
+			Push(m_segments[CS]);
+			Push(IP);
+			IP = OPERAND_A;
+			m_segments[CS] = OPERAND_B;
+			APPEND_DBG("CS:");
+			APPEND_HEX_DBG(IP);
+			break;
+		case 0x05:
+			CMD_NAME("JMP");
+			IP = OPERAND_A;
+			m_segments[CS] = OPERAND_B;
+			APPEND_DBG("CS:");
+			APPEND_HEX_DBG(IP);
+			break;
 		default:
 			UNKNOWN_OPCODE(OPCODE2);
 		}
@@ -511,9 +669,23 @@ opcode_:
 
 	case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D: case 0x5E: case 0x5F:
 		CMD_NAME("POP");
+		{
+			int reg = OPCODE1 & 0x07;
+			ADDRESS_METHOD = r16;
+			OPERAND_A = Pop();
+			APPEND_DBG(m_regNames[reg + 8]);
+			SetReg(reg, OPERAND_A);
+		}
+		break;
+
+	case 0x90: case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x96: case 0x97:
+		CMD_NAME("XCHG");
 		ADDRESS_METHOD = r16;
-		OPERAND_A = Pop();
-		SetReg(OPCODE1 & 0x07, OPERAND_A);
+		OPERAND_A = GetReg(OPCODE1 & 0x07);
+		APPEND_DBG(", ");
+		OPERAND_B = GetReg(0);
+		SetReg(OPCODE1 & 0x07, OPERAND_B);
+		SetReg(0, OPERAND_A);
 		break;
 
 	case 0x06:
@@ -547,13 +719,69 @@ opcode_:
 		break;
 
 	case 0x0F:
-		CMD_NAME("POP CS");
-		m_segments[CS] = Pop();
+		OPCODE2 = GetIMM8();
+		switch (OPCODE2)
+		{
+		case 0x87:
+			CMD_NAME("JA"); condition = !TestFlag<CF>() && !TestFlag<ZF>(); CJMP16
+		case 0x83:
+			CMD_NAME("JAE"); condition = !TestFlag<CF>(); CJMP16
+		case 0x82:
+			CMD_NAME("JB"); condition = TestFlag<CF>(); CJMP16
+		case 0x86:
+			CMD_NAME("JBE"); condition = TestFlag<CF>() || TestFlag<ZF>(); CJMP16
+		case 0x84:
+			CMD_NAME("JZ"); condition = TestFlag<ZF>(); CJMP16
+		case 0x8F:
+			CMD_NAME("JG"); condition = !TestFlag<ZF>() && (TestFlag<SF>() == TestFlag<OF>()); CJMP16
+		}
 		break;
 
 	case 0x1F:
 		CMD_NAME("POP DS");
 		m_segments[DS] = Pop();
+		break;
+
+	case 0x6A:
+		CMD_NAME("PUSH");
+		OPERAND_A = GetIMM8();
+		Push(OPERAND_A);
+		break;
+
+	case 0x68:
+		CMD_NAME("PUSH");
+		OPERAND_A = GetIMM16();
+		Push(OPERAND_A);
+		break;
+
+	case 0x60:
+		{
+			CMD_NAME("PUSHA");
+			uint16_t originalSP = m_segments[SP];
+			Push(m_registers[AX]);
+			Push(m_registers[CX]);
+			Push(m_registers[DX]);
+			Push(m_registers[BX]);
+			Push(originalSP);
+			Push(m_registers[BP]);
+			Push(m_registers[SI]);
+			Push(m_registers[DI]);
+		}
+		break;
+
+	case 0x61:
+		{
+			CMD_NAME("POPA");
+			m_registers[DI] = Pop();
+			m_registers[SI] = Pop();
+			m_registers[BP] = Pop();
+			uint16_t originalSP = Pop();
+			m_registers[BX] = Pop();
+			m_registers[DX] = Pop();
+			m_registers[CX] = Pop();
+			m_registers[AX] = Pop();
+			//m_segments[SP] = originalSP;
+		}
 		break;
 
 	case 0xF6: case 0xF7:
@@ -563,6 +791,23 @@ opcode_:
 
 		switch (OPCODE2)
 		{
+		case 0x00:
+			CMD_NAME("TEST");
+			OPERAND_A = GetRM();
+			APPEND_DBG(", ");
+			if (Byte())
+			{
+				OPERAND_B = GetIMM8();
+			}
+			else
+			{
+				OPERAND_B = GetIMM16();
+			}
+			RESULT = OPERAND_A & OPERAND_B;
+			UpdateFlags_SFZFPF();
+			SetFlag<CF>(false);
+			SetFlag<OF>(false);
+			break;
 		case 0x04:
 			CMD_NAME("MUL");
 			OPERAND_A = (uint16_t)GetReg(0);
@@ -572,14 +817,16 @@ opcode_:
 			if (Byte())
 			{
 				m_registers[0] = RESULT;
+				SetFlag<OF>(RESULT & 0xFF00);
+				SetFlag<CF>(RESULT & 0xFF00);
 			}
 			else
 			{
 				m_registers[0] = RESULT;
 				m_registers[DX] = RESULT >> 16;
+				SetFlag<OF>(RESULT & 0xFFFF0000);
+				SetFlag<CF>(RESULT & 0xFFFF0000);
 			}
-			UpdateFlags_CF();
-			SetFlag<OF>(TestFlag<CF>());
 			break;
 		case 0x05:
 			CMD_NAME("IMUL");
@@ -590,14 +837,16 @@ opcode_:
 			if (Byte())
 			{
 				m_registers[0] = RESULT;
+				SetFlag<OF>(RESULT & 0xFF00);
+				SetFlag<CF>(RESULT & 0xFF00);
 			}
 			else
 			{
 				m_registers[0] = RESULT;
 				m_registers[DX] = RESULT >> 16;
+				SetFlag<OF>(RESULT & 0xFFFF0000);
+				SetFlag<CF>(RESULT & 0xFFFF0000);
 			}
-			UpdateFlags_CF();
-			SetFlag<OF>(TestFlag<CF>());
 			break;
 
 		case 0x06:
@@ -607,11 +856,12 @@ opcode_:
 				OPERAND_A = (uint16_t)GetReg(0);
 				APPEND_DBG(", ");
 				OPERAND_B = (uint16_t)GetRM();
-				m_registers[0] = OPERAND_A / OPERAND_B + ((OPERAND_A % OPERAND_B) << 8);
+				SetReg(AL, OPERAND_A / OPERAND_B);
+				SetReg(AH, (OPERAND_A % OPERAND_B));
 			}
 			else
 			{
-				OPERAND_A = (uint16_t)GetReg(0) + ((uint16_t)GetReg(DX) << 16);
+				OPERAND_A = (uint32_t)GetReg(0) + ((uint32_t)GetReg(DX) << 16);
 				APPEND_DBG(", ");
 				OPERAND_B = (uint16_t)GetRM();
 				m_registers[0] = OPERAND_A / OPERAND_B;
@@ -625,11 +875,12 @@ opcode_:
 				OPERAND_A = (int16_t)GetReg(0);
 				APPEND_DBG(", ");
 				OPERAND_B = (int16_t)GetRM();
-				m_registers[0] = OPERAND_A / OPERAND_B + ((OPERAND_A % OPERAND_B) << 8);
+				SetReg(AL, OPERAND_A / OPERAND_B);
+				SetReg(AH, (OPERAND_A % OPERAND_B));
 			}
 			else
 			{
-				OPERAND_A = (int16_t)GetReg(0) + ((int16_t)GetReg(DX) << 16);
+				OPERAND_A = (int32_t)GetReg(0) + ((int32_t)GetReg(DX) << 16);
 				APPEND_DBG(", ");
 				OPERAND_B = (int16_t)GetRM();
 				m_registers[0] = OPERAND_A / OPERAND_B;
@@ -642,51 +893,163 @@ opcode_:
 		}
 		break;
 
+	case 0x6B:
+		ADDRESS_METHOD = r16;
+		CMD_NAME("IMUL");
+		OPERAND_A = (int16_t)GetReg();
+		APPEND_DBG(", ");
+		OPERAND_B = (int8_t)GetIMM8();
+		RESULT = OPERAND_A * OPERAND_B;
+		SetFlag<OF>(RESULT & 0xFFFF0000);
+		SetFlag<CF>(RESULT & 0xFFFF0000);
+		SetReg(RESULT);
+		break;
+
+	case 0x69:
+		ADDRESS_METHOD = r16;
+		CMD_NAME("IMUL");
+		GetReg();
+		APPEND_DBG(", ");
+		OPERAND_A = (int16_t)GetRM();
+		APPEND_DBG(", ");
+		OPERAND_B = (int16_t)GetIMM16();
+		RESULT = OPERAND_A * OPERAND_B;
+		SetFlag<OF>(RESULT & 0xFFFF0000);
+		SetFlag<CF>(RESULT & 0xFFFF0000);
+		SetReg(RESULT);
+		break;
 
 	case 0xD0: case 0xD1: case 0xD2: case 0xD3:
 		ADDRESS_METHOD = OPCODE1 & 1;
 		MODREGRM = ExtractByte();
 		OPCODE2 = (MODREGRM & REG) >> 3;
 
-		if (OPCODE2 & 0x02)
+		if (OPCODE1 & 0x02)
 		{
 			times = GetRegB(CL) & 0x1F;
 		}
+
+		MSB_MASK = (OPCODE1 & 1 )? 0x8000 : 0x80;
 
 		switch (OPCODE2)
 		{
 		case 0x04:
 			CMD_NAME("SHL");
-			OPERAND_A = GetRM();
-			RESULT = OPERAND_A << times;
-			SetRM(RESULT);
-			UpdateFlags_CF();
 			break;
 		case 0x05:
 			CMD_NAME("SHR");
-			OPERAND_A = GetRM();
-			RESULT = OPERAND_A >> times;
-			SetRM(RESULT);
-			UpdateFlags_CF();
 			break;
 		case 0x06:
 			CMD_NAME("SAL");
-			OPERAND_A = (int16_t)GetRM();
-			RESULT = OPERAND_A << times;
-			SetRM(RESULT);
-			UpdateFlags_CF();
 			break;
 		case 0x07:
 			CMD_NAME("SAR");
-			OPERAND_A = (int16_t)GetRM();
-			RESULT = OPERAND_A >> times;
-			SetRM(RESULT);
-			UpdateFlags_CF();
 			break;
-
 		default:
 			UNKNOWN_OPCODE(OPCODE2);
 		}
+		OPERAND_A = GetRM();
+		RESULT = OPERAND_A;
+
+		for (int i = 0; i < times; ++i)
+		{
+			switch (OPCODE2)
+			{
+			case 0x04:
+				SetFlag<CF>(MSB_MASK & RESULT);
+				RESULT = RESULT * 2;
+				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != TestFlag<CF>());
+				UpdateFlags_SFZFPF();
+				break;
+			case 0x05:
+				SetFlag<CF>(1 & RESULT);
+				RESULT = RESULT / 2;
+				SetFlag<OF>((MSB_MASK & OPERAND_A) != 0);
+				UpdateFlags_SFZFPF();
+				break;
+			case 0x06:
+				SetFlag<CF>(MSB_MASK & RESULT);
+				RESULT = RESULT * 2;
+				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != TestFlag<CF>());
+				UpdateFlags_SFZFPF();
+				break;
+			case 0x07:
+				SetFlag<CF>(1 & RESULT);
+				RESULT = RESULT / 2;
+				ClearFlag<OF>();
+				UpdateFlags_SFZFPF();
+				break;
+
+			default:
+				UNKNOWN_OPCODE(OPCODE2);
+			}
+		}
+		SetRM(RESULT);
+		break;
+
+	case 0xC0: case 0xC1:
+		ADDRESS_METHOD = OPCODE1 & 1;
+		MODREGRM = ExtractByte();
+		OPCODE2 = (MODREGRM & REG) >> 3;
+
+		times = GetIMM8();
+
+		MSB_MASK = (OPCODE1 & 1) ? 0x8000 : 0x80;
+
+		switch (OPCODE2)
+		{
+		case 0x04:
+			CMD_NAME("SHL");
+			break;
+		case 0x05:
+			CMD_NAME("SHR");
+			break;
+		case 0x06:
+			CMD_NAME("SAL");
+			break;
+		case 0x07:
+			CMD_NAME("SAR");
+			break;
+		default:
+			UNKNOWN_OPCODE(OPCODE2);
+		}
+		OPERAND_A = GetRM();
+		RESULT = OPERAND_A;
+
+		for (int i = 0; i < times; ++i)
+		{
+			switch (OPCODE2)
+			{
+			case 0x04:
+				SetFlag<CF>(MSB_MASK & RESULT);
+				RESULT = RESULT * 2;
+				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != TestFlag<CF>());
+				UpdateFlags_SFZFPF();
+				break;
+			case 0x05:
+				SetFlag<CF>(1 & RESULT);
+				RESULT = RESULT / 2;
+				SetFlag<OF>((MSB_MASK & OPERAND_A) != 0);
+				UpdateFlags_SFZFPF();
+				break;
+			case 0x06:
+				SetFlag<CF>(MSB_MASK & RESULT);
+				RESULT = RESULT * 2;
+				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != TestFlag<CF>());
+				UpdateFlags_SFZFPF();
+				break;
+			case 0x07:
+				SetFlag<CF>(1 & RESULT);
+				RESULT = RESULT / 2;
+				ClearFlag<OF>();
+				UpdateFlags_SFZFPF();
+				break;
+
+			default:
+				UNKNOWN_OPCODE(OPCODE2);
+			}
+		}
+		SetRM(RESULT);
 		break;
 
 	case 0xAA: case 0xAB:
@@ -722,7 +1085,61 @@ opcode_:
 				*(dbg_args_ptr = dbg_args) = 0;
 #endif
 			}
-			m_registers[CX]--;
+			if (REP)
+			{
+				m_registers[CX]--;
+			}
+		}
+
+		break;
+
+
+	case 0xAC: case 0xAD:
+		ADDRESS_METHOD = OPCODE1 & 1;
+		if (REP)
+		{
+			times = m_registers[CX];
+		}
+		for (int i = 0; i < times; ++i)
+		{
+			byte offsetreg = DS;
+			if (m_segmentOverride != NONE)
+			{
+				offsetreg = m_segmentOverride;
+			}
+
+			CMD_NAME("LODS");
+			APPEND_DBG(" [");
+			ADDRESS = GetSegment(offsetreg) << 4;
+			APPEND_DBG(":");
+			ADDRESS += m_registers[SI];
+			APPEND_DBG("SI], ");
+
+			GetReg(0);
+
+			if (Byte())
+			{
+				OPERAND_A = MemoryByte(ADDRESS);
+				SetReg(0, OPERAND_A);
+				m_registers[SI] += TestFlag<DF>() == 0 ? 1 : -1;
+			}
+			else
+			{
+				OPERAND_A = MemoryWord(ADDRESS);
+				SetReg(0, OPERAND_A);
+				m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
+			}
+
+			if (i != times - 1)
+			{
+#ifdef _DEBUG
+				*(dbg_args_ptr = dbg_args) = 0;
+#endif
+			}
+			if (REP)
+			{
+				m_registers[CX]--;
+			}
 		}
 
 		break;
@@ -730,6 +1147,19 @@ opcode_:
 	case 0xC3:
 		CMD_NAME("RET");
 		IP = Pop();
+		break;
+
+	case 0xCB:
+		CMD_NAME("RET");
+		IP = Pop();
+		m_segments[CS] = Pop();
+		break;
+
+	case 0xCF:
+		CMD_NAME("IRET");
+		IP = Pop();
+		m_segments[CS] = Pop();
+		m_flags = Pop();
 		break;
 
 	case 0xC5:
@@ -796,7 +1226,10 @@ opcode_:
 				*(dbg_args_ptr = dbg_args) = 0;
 	#endif
 			}
-			m_registers[CX]--;
+			if (REP)
+			{
+				m_registers[CX]--;
+			}
 		}
 		break;
 
@@ -871,7 +1304,7 @@ opcode_:
 		break;
 
 		case 0xA6: case 0xA7:
-			if (REP)
+			if (REP || REPN)
 			{
 				times = m_registers[CX];
 			}
@@ -894,7 +1327,8 @@ opcode_:
 				{
 					OPERAND_A = MemoryWord(_(src_seg, src_offset));
 					OPERAND_B = MemoryWord(_(dst_seg, dst_offset));
-					RESULT = OPERAND_A - OPERAND_B;
+					OPERAND_B = -OPERAND_B;
+					RESULT = OPERAND_A + OPERAND_B;
 					UpdateFlags_CFOFAF();
 					UpdateFlags_SFZFPF();
 					m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
@@ -904,7 +1338,8 @@ opcode_:
 				{
 					OPERAND_A = MemoryByte(_(src_seg, src_offset));
 					OPERAND_B = MemoryByte(_(dst_seg, dst_offset));
-					RESULT = OPERAND_A - OPERAND_B;
+					OPERAND_B = -OPERAND_B;
+					RESULT = OPERAND_A + OPERAND_B;
 					UpdateFlags_CFOFAF();
 					UpdateFlags_SFZFPF();
 					m_registers[SI] += TestFlag<DF>() == 0 ? 1 : -1;
@@ -916,16 +1351,72 @@ opcode_:
 					*(dbg_args_ptr = dbg_args) = 0;
 #endif
 				}
-				m_registers[CX]--;
+				if (REP || REPN)
+				{
+					m_registers[CX]--;
+				}
+				if (REP && !TestFlag<ZF>())
+				{
+					break;
+				}
+				if (REPN && TestFlag<ZF>())
+				{
+					break;
+				}
 			}
+			break;
+
+		case 0xA8: case 0xA9:
+			CMD_NAME("TEST");
+			ADDRESS_METHOD = OPCODE1 & 1;
+			OPERAND_A = GetReg(0);
+			APPEND_DBG(", 0x");
+			if (Byte())
+			{
+				byte data = GetIMM8();
+				APPEND_HEX_DBG(data);
+				OPERAND_B = data;
+			}
+			else
+			{
+				word data = GetIMM16();
+				APPEND_HEX_DBG(data);
+				OPERAND_B = data;
+			}
+			RESULT = OPERAND_A & OPERAND_B;
+			UpdateFlags_SFZFPF();
 			break;
 	default:
 		UNKNOWN_OPCODE(OPCODE1);
 	}
 
 #ifdef _DEBUG
-	m_log.appendf("%s %s %s\n", dbg_cmd_address, dbg_cmd_name, dbg_args);
+	if (logging_state)
+	{
+		m_log.appendf("%s %s %s\n", dbg_cmd_address, dbg_cmd_name, dbg_args);
+		printf("%s %s %s\n", dbg_cmd_address, dbg_cmd_name, dbg_args);
+		m_scrollToBottom = true;
+	}
 #endif
+
+	for (int i = 0; i < 8; ++i)
+	{
+		n2hexstr(buff, m_registers[i]); fprintf(logfile, buff);
+	}
+	for (int i = 0; i < 4; ++i)
+	{
+		n2hexstr(buff, m_segments[i]); fprintf(logfile, buff);
+	}
+	fprintf(logfile, "\n");
+}
+
+void CPU::Interrupt(int n)
+{
+	Push(m_flags);
+	Push(m_segments[CS]);
+	Push(IP);
+	IP = m_ram[n * 4] + m_ram[n * 4 + 1] * 0x100;
+	m_segments[CS] = m_ram[n * 4 + 2] + m_ram[n * 4 + 3] * 0x100;
 }
 
 void CPU::GUI()
@@ -972,6 +1463,13 @@ void CPU::GUI()
 
 	ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
 	ImGui::Begin("log");
+	if (ImGui::Checkbox("Do logging", &logging_state)) {
+		m_log.clear();
+	};
+	ImGui::SameLine();
+	if (ImGui::Button("Close")) {
+		fclose(logfile);
+	};
 	if (ImGui::Button("Clear")) {
 		m_log.clear();
 	};

@@ -23,10 +23,33 @@ inline bool gl3wIsSupported(int, int)
 #include <imgui.h>
 #include <simpletext.h>
 
+/*
+	40:49	byte	Current video mode  (see VIDEO MODE)
+	40:4A	word	Number of screen columns
+	40:4C	word	Size of current video regen buffer in bytes
+	40:4E	word	Offset of current video page in video regen buffer
+	40:50  8 words	Cursor position of pages 1-8, high order byte=row
+			low order byte=column; changing this data isn't
+			reflected immediately on the display
+	40:60	byte	Cursor ending (bottom) scan line (don't modify)
+	40:61	byte	Cursor starting (top) scan line (don't modify)
+	40:62	byte	Active display page number
+	40:63	word	Base port address for active 6845 CRT controller
+			3B4h = mono, 3D4h = color
+	40:65	byte	6845 CRT mode control register value (port 3x8h)
+			EGA/VGA values emulate those of the MDA/CGA
+	40:66	byte	CGA current color palette mask setting (port 3d9h)
+			EGA and VGA values emulate the CGA
+*/
 enum
 {
 	MEMORY_SIZE_KB = 0x0280,
 	VIDEO_MOD = 0x0049,
+	NUMBER_OF_SCREEN_COLUMNS = 0x004A,
+	CURSOR_POSITION = 0x0050,
+	CURSOR_ENDING = 0x0060,
+	CURSOR_STARTING = 0x0061,
+	ACTIVE_DISPLAY_PAGE = 0x0062,
 };
 
 inline uint32_t AbsAddress(uint16_t offset, uint16_t location)
@@ -74,6 +97,7 @@ int Application::Init()
 	m_disk.Read((char*)m_ram + loadAddress, 0, 0x200);
 	m_cpu.IP = loadAddress;
 	m_cpu.SetSegment(CPU::CS, 0);
+	m_int16_0 = false;
 
 	return EXIT_SUCCESS;
 }
@@ -114,6 +138,11 @@ void Application::Update()
 	}
 	ImGui::End();
 
+	if (m_int16_0)
+	{
+		doStep = false;
+	}
+
 	if (doStep)
 	{
 		m_cpu.Step();
@@ -130,6 +159,11 @@ void Application::Update()
 	{
 		m_disk.Open("GlukOS.IMA");
 	}
+	if (ImGui::Button("Mount mikeos.dmg"))
+	{
+		m_disk.Open("mikeos.dmg");
+	}
+	
 	static int loadAddress = 0x7C00;
 	ImGui::PushItemWidth(150);
 	ImGui::InputInt("Boot address", &loadAddress, 0, 0, ImGuiInputTextFlags_::ImGuiInputTextFlags_CharsHexadecimal);
@@ -141,6 +175,16 @@ void Application::Update()
 	}
 	ImGui::Text(m_disk.GetBiosBlock().volLabel);
 	ImGui::Text(m_disk.GetBiosBlock().fileSysType);
+
+	if (ImGui::Button("Load COM tests"))
+	{
+		m_disk.Open("../Tests/Test2/test.COM");
+		m_disk.Read((char*)m_ram + (uint32_t)0x100, 0, 0x200);
+		m_disk.Close();
+		m_cpu.IP = 0x100;
+		m_cpu.SetSegment(CPU::CS, 0);
+	}
+
 	ImGui::End();
 }
 
@@ -150,14 +194,16 @@ void Application::DrawScreen()
 
 	st.Begin();
 	int screenWidth = GetW(0x40, 0x004a);
+	int screenHeight = 25;
+	int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
 
 	uint32_t p = 0xB800 << 4;
-	for (int row = 0; row < 25; ++row)
+	for (int row = 0; row < screenHeight; ++row)
 	{
 		for (int clm = 0; clm < screenWidth; ++clm)
 		{
-			char symbol = m_ram[p + row * screenWidth * 2 + clm * 2];
-			char attribute = m_ram[p + row * screenWidth * 2 + clm * 2 + 1];
+			char symbol = m_ram[p + row * screenWidth * 2 + clm * 2 + screenHeight * screenWidth * 2 * active_page];
+			char attribute = m_ram[p + row * screenWidth * 2 + clm * 2 + screenHeight * screenWidth * 2 * active_page + 1];
 
 			char forgroundColor = attribute & 0x07;
 			char backgroundColor = (attribute & 0x70) >> 4;
@@ -206,9 +252,9 @@ void Application::SetBIOSVars()
 	StoreW(0x40, 0x0006, 0x02E8); // COM4
 
 	StoreW(0x40, 0x0013, MEMORY_SIZE_KB); //Total memory in K-bytes
-	StoreB(0x40, VIDEO_MOD, 0x0000); // Current active video mode
+	StoreB(0x40, VIDEO_MOD, 0x02); // Current active video mode
 
-	StoreW(0x40, 0x004a, 80); // Screen width in text columns
+	StoreW(0x40, NUMBER_OF_SCREEN_COLUMNS, 80); // Screen width in text columns
 
 	StoreW(0x0, 0x78, 0xefc7); // pointer to diskette_param_table
 
@@ -233,7 +279,21 @@ void Application::SetBIOSVars()
 }
 
 #define SET_AH(b) m_cpu.SetRegB(CPU::AH, b)
+#define SET_AL(b) m_cpu.SetRegB(CPU::AL, b)
+#define SET_DH(b) m_cpu.SetRegB(CPU::DH, b)
+#define SET_DL(b) m_cpu.SetRegB(CPU::DL, b)
+#define SET_CH(b) m_cpu.SetRegB(CPU::CH, b)
+#define SET_CL(b) m_cpu.SetRegB(CPU::CL, b)
+#define SET_CX(b) m_cpu.SetRegB(CPU::CX, b)
+#define SET_DX(b) m_cpu.SetRegB(CPU::DX, b)
 #define GET_AH() m_cpu.GetRegB(CPU::AH)
+#define GET_BH() m_cpu.GetRegB(CPU::BH)
+#define GET_BL() m_cpu.GetRegB(CPU::BL)
+#define GET_CH() m_cpu.GetRegB(CPU::CH)
+#define GET_CL() m_cpu.GetRegB(CPU::CL)
+#define GET_CX() m_cpu.GetReg(CPU::CX)
+#define GET_DH() m_cpu.GetRegB(CPU::DH)
+#define GET_DL() m_cpu.GetRegB(CPU::DL)
 #define GET_AL() m_cpu.GetRegB(CPU::AL)
 #define SET_DISK_RET_STATUS(status) StoreB(0x0040, 0x0074, status)
 #define SET_CF() m_cpu.SetFlag<CPU::CF>()
@@ -255,13 +315,219 @@ void Application::Int(CPU::byte x)
 		//Set Video Mode
 		case 0x00:
 			StoreB(0x40, VIDEO_MOD, arg);
-		case 0x0E:
-			printf("%c", arg);
+			printf("Video mode: %d\n", arg);
 			break;
+		case 0x01:
+			//Set cursor type
+			break;
+		case 0x02:
+			{
+				int page = GET_BH();
+				int row = GET_DH();
+				int column = GET_DL();
+				StoreB(0x40, CURSOR_POSITION + 2 * page + 0, row);
+				StoreB(0x40, CURSOR_POSITION + 2 * page + 1, column);
+			}
+			break;
+		case 0x03:
+			/*
+			on return:
+			CH = cursor starting scan line (low order 5 bits)
+			CL = cursor ending scan line (low order 5 bits)
+			DH = row
+			DL = column
+			*/
+			{
+				int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
+				int row = GetB(0x40, CURSOR_POSITION + 2 * active_page + 0);
+				int column = GetB(0x40, CURSOR_POSITION + 2 * active_page + 1);
+				SET_DH(row);
+				SET_DL(column);
+				SET_CH(0);
+				SET_CL(5);
+				break;
+			}
+		case 0x06:
+			{
+				int n = GET_AL();
+				int a = GET_BH();
+				int y1 = GET_CH();
+				int x1 = GET_CL();
+				int y2 = GET_DH();
+				int x2 = GET_DL();
+				int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
+				int screenWidth = GetW(0x40, 0x004a);
+				int screenHeight = 25;
+				uint32_t p = 0xB800 << 4;
+
+				for (int row = y1; row <= y2; ++row)
+				{
+					if (row + n <= y2 && n != 0)
+					{
+						for (int col = x1; col <= x2; ++col)
+						{
+							int tmp = GetW(0xB800, (row + n) * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page);
+							StoreW(0xB800, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, tmp);
+						}
+					}
+					else
+					{
+						for (int col = x1; col <= x2; ++col)
+						{
+							StoreW(0xB800, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, a << 8);
+						}
+					}
+				}
+			}
+			break;
+
+		case 0x0E:
+			/*
+			AL = ASCII character to write
+			BH = page number (text modes)
+			BL = foreground pixel color (graphics modes)
+			*/
+			{
+				char symbol = GET_AL();
+				char page = 0;// GET_BH();
+				int attribute = 7;
+				int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
+				int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
+				int screenWidth = GetW(0x40, 0x004a);
+				int screenHeight = 25;
+
+				if (row >= screenHeight)
+				{
+					scrollOneLine();
+					row = screenHeight - 1;
+				}
+
+				if (symbol == '\b')
+				{
+					--column;
+					if (column < 0)
+					{
+						column = screenWidth;
+						row--;
+						if (row < 0)
+						{
+							row = screenHeight;
+						}
+					}
+				}
+				else if (symbol == '\n')
+				{
+					column = 0;
+					row++;
+				}
+				else if (symbol == '\r')
+				{
+					column = 0;
+				}
+				else if (symbol == '\b')
+				{
+				}
+				else
+				{
+					StoreB(0xB800, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page, symbol);
+					++column;
+					if (column > screenWidth)
+					{
+						column = 0;
+						row++;
+					}
+				}
+
+				StoreB(0x40, CURSOR_POSITION + 2 * page + 0, row);
+				StoreB(0x40, CURSOR_POSITION + 2 * page + 1, column);
+			}
+
+			break;
+
+		case 0x09:
+			/*
+			AH = 09
+			AL = ASCII character to write
+			BH = display page  (or mode 13h, background pixel value)
+			BL = character attribute (text) foreground color (graphics)
+			CX = count of characters to write (CX >= 1)
+			*/
+		{
+			char symbol = GET_AL();
+			char page = GET_BH();
+			int attribute = GET_BL();
+			int count = GET_CX();
+			int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
+			int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
+			int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
+			int screenWidth = GetW(0x40, 0x004a);
+			int screenHeight = 25;
+
+			if (row >= screenHeight)
+			{
+				scrollOneLine();
+				row = screenHeight - 1;
+			}
+
+			for (int i = 0; i < count; ++i)
+			{
+				StoreW(0xB800, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page, symbol + (attribute << 8));
+				++column;
+				if (column >= screenWidth)
+				{
+					column = 0;
+					row++;
+				}
+			}
+		}
+		break;
+		case 0x10:
+			switch (function)
+			{
+			case 0x3:
+				break;
+			}
+			break;
+
+		case 0x0A:
+			/*
+	AH = 0A
+	AL = ASCII character to write
+	BH = display page  (or mode 13h, background pixel value)
+	BL = foreground color (graphics mode only)
+	CX = count of characters to write (CX >= 1)*/
+			{
+				char symbol = GET_AL();
+				char page = GET_BH();
+				char foreground_color = GET_BL();
+				int count = GET_CX();
+				int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
+				int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
+				int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
+				int screenWidth = GetW(0x40, 0x004a);
+				int screenHeight = 25;
+				for (int i = 0; i < count; ++i)
+				{
+					StoreW(0xB800, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page, symbol + (7 << 8));
+					++column;
+					if (column > screenWidth)
+					{
+						column = 0;
+						row++;
+						if (row > screenHeight)
+						{
+							row = 0;
+						}
+					}
+				}
+			}
+			break;
+
 		default:
 			ASSERT(false, "Unknown int10 function: 0x%s\n", n2hexstr(function).c_str());
 			break;
 		}
+		break;
 
 	// Conventional Memory Size
 	case 0x12:
@@ -308,9 +574,26 @@ void Application::Int(CPU::byte x)
 				goto int13_success;
 			}
 
+		case 0x10: /* disk controller reset */
+			goto int13_success;
+			break;
 		default:
 			FAIL("Unknown int13 function: 0x%s\n", n2hexstr(function).c_str());
 		}
+
+	case 0x16:
+		function = GET_AH();
+		switch (function)
+		{
+		case 0x00:
+		case 0x10:
+			m_int16_0 = true;
+			break;
+		default:
+			FAIL("Unknown int16 function: 0x%s\n", n2hexstr(function).c_str());
+		}
+		break;
+
 	int13_fail:
 		SET_AH(0x01); // defaults to invalid function in AH or invalid parameter
 	int13_fail_noah:
@@ -326,7 +609,57 @@ void Application::Int(CPU::byte x)
 		CLEAR_CF(); // no error
 		break;
 
+	case 0x1a:
+		/*
+		AL = midnight flag, 1 if 24 hours passed since reset
+		CX = high order word of tick count
+		DX = low order word of tick count
+		*/
+		// TODO
+		SET_AL(0);
+		SET_CX(0);
+		SET_DX(0);
+		break;
+
 	default:
-		ASSERT(false, "Unknown interrupt: 0x%s\n", n2hexstr(x).c_str());
+		//custom interrupt
+
+		m_cpu.Interrupt(x);
 	}
+}
+
+void Application::scrollOneLine()
+{
+	int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
+	int screenWidth = GetW(0x40, 0x004a);
+	int screenHeight = 25;
+	for (int row = 0; row <= screenHeight; ++row)
+	{
+		if (row + 1 <= screenHeight)
+		{
+			for (int col = 0; col <= screenWidth; ++col)
+			{
+				int tmp = GetB(0xB800, (row + 1) * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page);
+				StoreB(0xB800, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, tmp);
+			}
+		}
+		else
+		{
+			for (int col = 0; col <= screenWidth; ++col)
+			{
+				StoreB(0xB800, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, 0);
+			}
+		}
+	}
+}
+
+bool Application::KeyCallback(int c)
+{
+	if (m_int16_0)
+	{
+		m_cpu.SetRegW(CPU::AX, c);
+		m_int16_0 = false;
+		return true;
+	}
+	return false;
 }

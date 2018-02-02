@@ -5,10 +5,167 @@
 #include <chrono>
 #include <imgui.h>
 #include "examples/opengl3_example/imgui_impl_glfw_gl3.h"
+#include <map>
 
+/*
+		Key	 Normal    Shifted   w/Ctrl    w/Alt
+
+		A	  1E61	    1E41      1E01	1E00
+		B	  3062	    3042      3002	3000
+		C	  2E63	    2E42      2E03	2E00
+		D	  2064	    2044      2004	2000
+		E	  1265	    1245      1205	1200
+		F	  2166	    2146      2106	2100
+		G	  2267	    2247      2207	2200
+		H	  2368	    2348      2308	2300
+		I	  1769	    1749      1709	1700
+		J	  246A	    244A      240A	2400
+		K	  256B	    254B      250B	2500
+		L	  266C	    264C      260C	2600
+		M	  326D	    324D      320D	3200
+		N	  316E	    314E      310E	3100
+		O	  186F	    184F      180F	1800
+		P	  1970	    1950      1910	1900
+		Q	  1071	    1051      1011	1000
+		R	  1372	    1352      1312	1300
+		S	  1F73	    1F53      1F13	1F00
+		T	  1474	    1454      1414	1400
+		U	  1675	    1655      1615	1600
+		V	  2F76	    2F56      2F16	2F00
+		W	  1177	    1157      1117	1100
+		X	  2D78	    2D58      2D18	2D00
+		Y	  1579	    1559      1519	1500
+		Z	  2C7A	    2C5A      2C1A	2C00
+	
+	    Key	 Normal    Shifted   w/Ctrl    w/Alt
+
+		1	  0231	    0221		7800
+		2	  0332	    0340      0300	7900
+		3	  0433	    0423		7A00
+		4	  0534	    0524		7B00
+		5	  0635	    0625		7C00
+		6	  0736	    075E      071E	7D00
+		7	  0837	    0826		7E00
+		8	  0938	    092A		7F00
+		9	  0A39	    0A28		8000
+		0	  0B30	    0B29		8100
+
+	   Key	 Normal    Shifted   w/Ctrl    w/Alt
+
+		-	  0C2D	    0C5F      0C1F	8200
+		=	  0D3D	    0D2B		8300
+		[	  1A5B	    1A7B      1A1B	1A00
+		]	  1B5D	    1B7D      1B1D	1B00
+		;	  273B	    273A		2700
+		'	  2827	    2822
+		`	  2960	    297E
+		\	  2B5C	    2B7C      2B1C	2600 (same as Alt L)
+		,	  332C	    333C
+		.	  342E	    343E
+		/	  352F	    353F
+
+		Key	 Normal    Shifted   w/Ctrl    w/Alt
+
+		F1	  3B00	    5400      5E00	6800
+		F2	  3C00	    5500      5F00	6900
+		F3	  3D00	    5600      6000	6A00
+		F4	  3E00	    5700      6100	6B00
+		F5	  3F00	    5800      6200	6C00
+		F6	  4000	    5900      6300	6D00
+		F7	  4100	    5A00      6400	6E00
+		F8	  4200	    5B00      6500	6F00
+		F9	  4300	    5C00      6600	7000
+		F10	  4400	    5D00      6700	7100
+		F11	  8500	    8700      8900	8B00
+		F12	  8600	    8800      8A00	8C00
+
+		Key	    Normal    Shifted	w/Ctrl	  w/Alt
+
+		BackSpace    0E08      0E08	 0E7F	  0E00
+		Del	     5300      532E	 9300	  A300
+		Down Arrow   5000      5032	 9100	  A000
+		End	     4F00      4F31	 7500	  9F00
+		Enter	     1C0D      1C0D	 1C0A	  A600
+		Esc	     011B      011B	 011B	  0100
+		Home	     4700      4737	 7700	  9700
+		Ins	     5200      5230	 9200	  A200
+		Keypad 5		4C35	 8F00
+		Keypad *     372A		 9600	  3700
+		Keypad -     4A2D      4A2D	 8E00	  4A00
+		Keypad +     4E2B      4E2B		  4E00
+		Keypad /     352F      352F	 9500	  A400
+		Left Arrow   4B00      4B34	 7300	  9B00
+		PgDn	     5100      5133	 7600	  A100
+		PgUp	     4900      4939	 8400	  9900
+		PrtSc				 7200
+		Right Arrow  4D00      4D36	 7400	  9D00
+		SpaceBar     3920      3920	 3920	  3920
+		Tab	     0F09      0F00	 9400	  A500
+		Up Arrow     4800      4838	 8D00	  9800
+		*/
+
+std::map<int, int> keyCodes;
+bool        KeysDown[512];
+enum
+{
+	NORMAL = 0,
+	SHIFT = 1 << 0,
+	CTRL = 1 << 1,
+	ALT = 1 << 2
+};
 
 int main(int argc, char **argv)
 {
+	int key;
+	key = GLFW_KEY_A << 4; keyCodes[key | NORMAL] = 0x1E61; keyCodes[key | SHIFT] = 0x1E41; keyCodes[key | CTRL] = 0x1E01; keyCodes[key | ALT] = 0x1E00;
+	key = GLFW_KEY_B << 4; keyCodes[key | NORMAL] = 0x3062; keyCodes[key | SHIFT] = 0x3042; keyCodes[key | CTRL] = 0x3002; keyCodes[key | ALT] = 0x3000;
+	key = GLFW_KEY_C << 4; keyCodes[key | NORMAL] = 0x2E63; keyCodes[key | SHIFT] = 0x2E43; keyCodes[key | CTRL] = 0x2E03; keyCodes[key | ALT] = 0x2E00;
+	key = GLFW_KEY_D << 4; keyCodes[key | NORMAL] = 0x2064; keyCodes[key | SHIFT] = 0x2044; keyCodes[key | CTRL] = 0x2004; keyCodes[key | ALT] = 0x2000;
+	key = GLFW_KEY_E << 4; keyCodes[key | NORMAL] = 0x1265; keyCodes[key | SHIFT] = 0x1245; keyCodes[key | CTRL] = 0x1205; keyCodes[key | ALT] = 0x1200;
+	key = GLFW_KEY_F << 4; keyCodes[key | NORMAL] = 0x2166; keyCodes[key | SHIFT] = 0x2146; keyCodes[key | CTRL] = 0x2106; keyCodes[key | ALT] = 0x2100;
+	key = GLFW_KEY_G << 4; keyCodes[key | NORMAL] = 0x2267; keyCodes[key | SHIFT] = 0x2247; keyCodes[key | CTRL] = 0x2207; keyCodes[key | ALT] = 0x2200;
+	key = GLFW_KEY_H << 4; keyCodes[key | NORMAL] = 0x2368; keyCodes[key | SHIFT] = 0x2348; keyCodes[key | CTRL] = 0x2308; keyCodes[key | ALT] = 0x2300;
+	key = GLFW_KEY_I << 4; keyCodes[key | NORMAL] = 0x1769; keyCodes[key | SHIFT] = 0x1749; keyCodes[key | CTRL] = 0x1709; keyCodes[key | ALT] = 0x1700;
+	key = GLFW_KEY_J << 4; keyCodes[key | NORMAL] = 0x246A; keyCodes[key | SHIFT] = 0x244A; keyCodes[key | CTRL] = 0x240A; keyCodes[key | ALT] = 0x2400;
+	key = GLFW_KEY_K << 4; keyCodes[key | NORMAL] = 0x256B; keyCodes[key | SHIFT] = 0x254B; keyCodes[key | CTRL] = 0x250B; keyCodes[key | ALT] = 0x2500;
+	key = GLFW_KEY_L << 4; keyCodes[key | NORMAL] = 0x266C; keyCodes[key | SHIFT] = 0x264C; keyCodes[key | CTRL] = 0x260C; keyCodes[key | ALT] = 0x2600;
+	key = GLFW_KEY_M << 4; keyCodes[key | NORMAL] = 0x326D; keyCodes[key | SHIFT] = 0x324D; keyCodes[key | CTRL] = 0x320D; keyCodes[key | ALT] = 0x3200;
+	key = GLFW_KEY_N << 4; keyCodes[key | NORMAL] = 0x316E; keyCodes[key | SHIFT] = 0x314E; keyCodes[key | CTRL] = 0x310E; keyCodes[key | ALT] = 0x3100;
+	key = GLFW_KEY_O << 4; keyCodes[key | NORMAL] = 0x186F; keyCodes[key | SHIFT] = 0x184F; keyCodes[key | CTRL] = 0x180F; keyCodes[key | ALT] = 0x1800;
+	key = GLFW_KEY_P << 4; keyCodes[key | NORMAL] = 0x1970; keyCodes[key | SHIFT] = 0x1950; keyCodes[key | CTRL] = 0x1910; keyCodes[key | ALT] = 0x1900;
+	key = GLFW_KEY_Q << 4; keyCodes[key | NORMAL] = 0x1071; keyCodes[key | SHIFT] = 0x1051; keyCodes[key | CTRL] = 0x1011; keyCodes[key | ALT] = 0x1000;
+	key = GLFW_KEY_R << 4; keyCodes[key | NORMAL] = 0x1372; keyCodes[key | SHIFT] = 0x1352; keyCodes[key | CTRL] = 0x1312; keyCodes[key | ALT] = 0x1300;
+	key = GLFW_KEY_S << 4; keyCodes[key | NORMAL] = 0x1F73; keyCodes[key | SHIFT] = 0x1F53; keyCodes[key | CTRL] = 0x1F13; keyCodes[key | ALT] = 0x1F00;
+	key = GLFW_KEY_T << 4; keyCodes[key | NORMAL] = 0x1474; keyCodes[key | SHIFT] = 0x1454; keyCodes[key | CTRL] = 0x1414; keyCodes[key | ALT] = 0x1400;
+	key = GLFW_KEY_U << 4; keyCodes[key | NORMAL] = 0x1675; keyCodes[key | SHIFT] = 0x1655; keyCodes[key | CTRL] = 0x1615; keyCodes[key | ALT] = 0x1600;
+	key = GLFW_KEY_V << 4; keyCodes[key | NORMAL] = 0x2F76; keyCodes[key | SHIFT] = 0x2F56; keyCodes[key | CTRL] = 0x2F16; keyCodes[key | ALT] = 0x2F00;
+	key = GLFW_KEY_W << 4; keyCodes[key | NORMAL] = 0x1177; keyCodes[key | SHIFT] = 0x1157; keyCodes[key | CTRL] = 0x1117; keyCodes[key | ALT] = 0x1100;
+	key = GLFW_KEY_X << 4; keyCodes[key | NORMAL] = 0x2D78; keyCodes[key | SHIFT] = 0x2D58; keyCodes[key | CTRL] = 0x2D18; keyCodes[key | ALT] = 0x2D00;
+	key = GLFW_KEY_Y << 4; keyCodes[key | NORMAL] = 0x1579; keyCodes[key | SHIFT] = 0x1559; keyCodes[key | CTRL] = 0x1519; keyCodes[key | ALT] = 0x1500;
+	key = GLFW_KEY_Z << 4; keyCodes[key | NORMAL] = 0x2C7A; keyCodes[key | SHIFT] = 0x2C5A; keyCodes[key | CTRL] = 0x2C1A; keyCodes[key | ALT] = 0x2C00;
+	key = GLFW_KEY_1 << 4; keyCodes[key | NORMAL] = 0x0231; keyCodes[key | SHIFT] = 0x0221; keyCodes[key | ALT] = 0x7800;
+	key = GLFW_KEY_2 << 4; keyCodes[key | NORMAL] = 0x0332; keyCodes[key | SHIFT] = 0x0340; keyCodes[key | ALT] = 0x7900; keyCodes[key | CTRL] = 0x0300;
+	key = GLFW_KEY_3 << 4; keyCodes[key | NORMAL] = 0x0433; keyCodes[key | SHIFT] = 0x0423; keyCodes[key | ALT] = 0x7A00;
+	key = GLFW_KEY_4 << 4; keyCodes[key | NORMAL] = 0x0534; keyCodes[key | SHIFT] = 0x0524; keyCodes[key | ALT] = 0x7B00;
+	key = GLFW_KEY_5 << 4; keyCodes[key | NORMAL] = 0x0635; keyCodes[key | SHIFT] = 0x0625; keyCodes[key | ALT] = 0x7C00;
+	key = GLFW_KEY_6 << 4; keyCodes[key | NORMAL] = 0x0736; keyCodes[key | SHIFT] = 0x075E; keyCodes[key | ALT] = 0x7D00; keyCodes[key | CTRL] = 0x071E;
+	key = GLFW_KEY_7 << 4; keyCodes[key | NORMAL] = 0x0837; keyCodes[key | SHIFT] = 0x0826; keyCodes[key | ALT] = 0x7E00;
+	key = GLFW_KEY_8 << 4; keyCodes[key | NORMAL] = 0x0938; keyCodes[key | SHIFT] = 0x092A; keyCodes[key | ALT] = 0x7F00;
+	key = GLFW_KEY_9 << 4; keyCodes[key | NORMAL] = 0x0A39; keyCodes[key | SHIFT] = 0x0A28; keyCodes[key | ALT] = 0x8000;
+	key = GLFW_KEY_0 << 4; keyCodes[key | NORMAL] = 0x0B30; keyCodes[key | SHIFT] = 0x0B29; keyCodes[key | ALT] = 0x8100;
+
+
+	key = GLFW_KEY_BACKSPACE << 4; keyCodes[key | NORMAL] = 0x0E08; keyCodes[key | SHIFT] = 0x0E08; keyCodes[key | CTRL] = 0x0E7F; keyCodes[key | ALT] = 0x0E00;
+	key = GLFW_KEY_ENTER << 4; keyCodes[key | NORMAL] = 0x1C0D; keyCodes[key | SHIFT] = 0x1C0D; keyCodes[key | CTRL] = 0x1C0A; keyCodes[key | ALT] = 0xA600;
+	key = GLFW_KEY_SPACE << 4; keyCodes[key | NORMAL] = 0x3920; keyCodes[key | SHIFT] = 0x3920; keyCodes[key | CTRL] = 0x3920; keyCodes[key | ALT] = 0x3920;
+	key = GLFW_KEY_PERIOD << 4; keyCodes[key | NORMAL] = 0x342E; keyCodes[key | SHIFT] = 0x343E; keyCodes[key | CTRL] = 0x342E; keyCodes[key | ALT] = 0x342E;
+	key = GLFW_KEY_COMMA << 4; keyCodes[key | NORMAL] = 0x332C; keyCodes[key | SHIFT] = 0x333C; keyCodes[key | CTRL] = 0x332C; keyCodes[key | ALT] = 0x332C;
+
+	key = GLFW_KEY_LEFT << 4; keyCodes[key | NORMAL] = 0x4B00; keyCodes[key | SHIFT] = 0x4B34; keyCodes[key | CTRL] = 0x7300; keyCodes[key | ALT] = 0x9B00;
+	key = GLFW_KEY_RIGHT << 4; keyCodes[key | NORMAL] = 0x4D00; keyCodes[key | SHIFT] = 0x4D36; keyCodes[key | CTRL] = 0x7400; keyCodes[key | ALT] = 0x9D00;
+	key = GLFW_KEY_UP << 4; keyCodes[key | NORMAL] = 0x4800; keyCodes[key | SHIFT] = 0x4838; keyCodes[key | CTRL] = 0x8D00; keyCodes[key | ALT] = 0x9800;
+	key = GLFW_KEY_DOWN << 4; keyCodes[key | NORMAL] = 0x5000; keyCodes[key | SHIFT] = 0x5032; keyCodes[key | CTRL] = 0x9100; keyCodes[key | ALT] = 0xA000;
+
 	printf("Compiled against GLFW %d.%d.%d\n", GLFW_VERSION_MAJOR, GLFW_VERSION_MINOR, GLFW_VERSION_REVISION);
 
 	if (!glfwInit())
@@ -117,24 +274,39 @@ int main(int argc, char **argv)
 			app->Resize(width, height);
 		});
 
-		glfwSetKeyCallback(window, [](GLFWwindow*, int key, int, int action, int mods)
+		glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int, int action, int mods)
 		{
-			ImGuiIO& io = ImGui::GetIO();
 			if (action == GLFW_PRESS)
-				io.KeysDown[key] = true;
+				KeysDown[key] = true;
 			if (action == GLFW_RELEASE)
-				io.KeysDown[key] = false;
+				KeysDown[key] = false;
 
-			io.KeyCtrl = io.KeysDown[GLFW_KEY_LEFT_CONTROL] || io.KeysDown[GLFW_KEY_RIGHT_CONTROL];
-			io.KeyShift = io.KeysDown[GLFW_KEY_LEFT_SHIFT] || io.KeysDown[GLFW_KEY_RIGHT_SHIFT];
-			io.KeyAlt = io.KeysDown[GLFW_KEY_LEFT_ALT] || io.KeysDown[GLFW_KEY_RIGHT_ALT];
-			io.KeySuper = io.KeysDown[GLFW_KEY_LEFT_SUPER] || io.KeysDown[GLFW_KEY_RIGHT_SUPER];
+			int index = (key << 4)
+				| ((KeysDown[GLFW_KEY_LEFT_CONTROL] || KeysDown[GLFW_KEY_RIGHT_CONTROL]) ? CTRL : 0)
+				| ((KeysDown[GLFW_KEY_LEFT_SHIFT] || KeysDown[GLFW_KEY_RIGHT_SHIFT]) ? SHIFT : 0)
+				| ((KeysDown[GLFW_KEY_LEFT_ALT] || KeysDown[GLFW_KEY_RIGHT_ALT]) ? ALT : 0);
+			int code = keyCodes[index];
+
+			Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
+			if (action == GLFW_RELEASE && !app->KeyCallback(code))
+			{
+				ImGuiIO& io = ImGui::GetIO();
+				if (action == GLFW_PRESS)
+					io.KeysDown[key] = true;
+				if (action == GLFW_RELEASE)
+					io.KeysDown[key] = false;
+
+				io.KeyCtrl = io.KeysDown[GLFW_KEY_LEFT_CONTROL] || io.KeysDown[GLFW_KEY_RIGHT_CONTROL];
+				io.KeyShift = io.KeysDown[GLFW_KEY_LEFT_SHIFT] || io.KeysDown[GLFW_KEY_RIGHT_SHIFT];
+				io.KeyAlt = io.KeysDown[GLFW_KEY_LEFT_ALT] || io.KeysDown[GLFW_KEY_RIGHT_ALT];
+				io.KeySuper = io.KeysDown[GLFW_KEY_LEFT_SUPER] || io.KeysDown[GLFW_KEY_RIGHT_SUPER];
+			}
 		});
 
-		glfwSetCharCallback(window, [](GLFWwindow*, unsigned int c)
+		glfwSetCharCallback(window, [](GLFWwindow* window, unsigned int c)
 		{
-			ImGuiIO& io = ImGui::GetIO();
-			io.AddInputCharacter((unsigned short)c);
+			//ImGuiIO& io = ImGui::GetIO();
+			//io.AddInputCharacter((unsigned short)c);
 		});
 
 		glfwSetScrollCallback(window, [](GLFWwindow*, double /*xoffset*/, double yoffset)

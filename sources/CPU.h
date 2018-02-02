@@ -3,6 +3,8 @@
 #include <string>
 #include <imgui.h>
 
+extern const uint8_t parity[0x100];
+
 template <typename I> 
 inline std::string n2hexstr(I w, size_t hex_len = sizeof(I) << 1)
 {
@@ -195,6 +197,8 @@ public:
 		}
 	}
 
+	void Interrupt(int n);
+
 	word IP;
 
 private:
@@ -312,6 +316,14 @@ private:
 	{
 		return *reinterpret_cast<uint16_t*>(m_ram + address);
 	}
+	inline uint8_t& PortByte(uint32_t address)
+	{
+		return *(m_port + address);
+	}
+	inline uint16_t& PortWord(uint32_t address)
+	{
+		return *reinterpret_cast<uint16_t*>(m_port + address);
+	}
 
 
 	inline word GetRM()
@@ -367,9 +379,10 @@ private:
 		APPEND_DBG("[");
 		if (m_segmentOverride != NONE)
 		{
-			APPEND_DBG(m_segNames[m_segmentOverride]);
-			APPEND_DBG(": ");
+			offsetreg = m_segmentOverride;
 		}
+		APPEND_DBG(m_segNames[offsetreg]);
+		APPEND_DBG(": ");
 		switch (MODREGRM & RM)
 		{
 			case 0: reg = (int32_t)m_registers[BX] + m_registers[SI]; APPEND_DBG("BX + SI"); break;
@@ -390,15 +403,12 @@ private:
 		}
 		else if ((MODREGRM & MOD) == 0x80)
 		{
-			disp = GetIMM16();
+			int16_t disp16 = GetIMM16();
 			APPEND_DBG(" + 0x");
-			APPEND_HEX_DBG(disp);
+			APPEND_HEX_DBG(disp16);
+			disp = disp16; // sign extension
 		}
 		APPEND_DBG("]");
-		if (m_segmentOverride != NONE)
-		{
-			offsetreg = m_segmentOverride;
-		}
 		ADDRESS = _(m_segments[offsetreg], reg + disp);
 	}
 	
@@ -423,18 +433,21 @@ private:
 	{
 		return ExtractByte();
 	}
+	
 	inline word GetIMM16()
 	{
 		word result = ExtractByte();
 		result |= ExtractByte() << 8;
 		return result;
 	}
+	
 	inline byte ExtractByte()
 	{
 		uint32_t address = m_segments[CS];
 		address = (address << 4) + IP++;
 		return m_ram[address];
 	}
+
 	inline void UpdateFlags_CF()
 	{
 		if (Byte())
@@ -446,23 +459,30 @@ private:
 			SetFlag<CF>((RESULT & 0x10000) != 0);
 		}
 	}
+	
 	inline void UpdateFlags_OF()
 	{
+		bool a_positive;
+		bool b_positive;
+		bool r_positive;
 		if (Byte())
 		{
-			bool a = (OPERAND_A & 0x80) != 0;
-			bool b = (OPERAND_B & 0x80) != 0;
-			bool r = (RESULT & 0x80) != 0;
-			SetFlag<OF>((!a && !b && r) || (a && b && !r));
+			a_positive = (OPERAND_A & 0x80) == 0;
+			b_positive = (OPERAND_B & 0x80) == 0;
+			r_positive = (RESULT & 0x80) == 0;
 		}
 		else
 		{
-			bool a = (OPERAND_A & 0x8000) != 0;
-			bool b = (OPERAND_B & 0x8000) != 0;
-			bool r = (RESULT & 0x8000) != 0;
-			SetFlag<OF>((!a && !b && r) || (a && b && !r));
+			a_positive = (OPERAND_A & 0x8000) == 0;
+			b_positive = (OPERAND_B & 0x8000) == 0;
+			r_positive = (RESULT & 0x8000) == 0;
 		}
+		SetFlag<OF>(
+			(!a_positive && !b_positive && r_positive)
+			|| (a_positive && b_positive && !r_positive)
+			);
 	}
+
 	inline void UpdateFlags_AF()
 	{
 		byte a = (OPERAND_A & 0xf);
@@ -470,18 +490,28 @@ private:
 		a += b;
 		SetFlag<AF>((a & 0x10) != 0);
 	}
+	
 	inline void UpdateFlags_PF()
 	{
-		byte b = RESULT;
-		b ^= b >> 4;
-		b ^= b >> 2;
-		b ^= b >> 1;
-		SetFlag<PF>((~b) & 1);
+		//byte b = RESULT;
+		//b ^= b >> 4;
+		//b ^= b >> 2;
+		//b ^= b >> 1;
+		SetFlag<PF>(parity[RESULT & 0xFF]);
 	}
+
 	inline void UpdateFlags_ZF()
 	{
-		SetFlag<ZF>(RESULT == 0);
+		if (Byte())
+		{
+			SetFlag<ZF>((RESULT & 0xFF) == 0);
+		}
+		else
+		{
+			SetFlag<ZF>((RESULT & 0xFFFF) == 0);
+		}
 	}
+	
 	inline void UpdateFlags_SF()
 	{
 		if (Byte())
