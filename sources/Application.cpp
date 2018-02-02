@@ -123,29 +123,29 @@ void Application::SetScale(int scale)
 
 void Application::Update()
 {
-	float doStep = false;
+	int doStep = 0;
 	ImGui::Begin("Execution control");
 	if (ImGui::Button("Step"))
 	{
-		doStep = true;
+		doStep = 1;
 	}
 	ImGui::SameLine();
 	static bool run = false;
 	ImGui::Checkbox("Run", &run);
 	if (run)
 	{
-		doStep = true;
+		doStep = 1000;
 	}
 	ImGui::End();
 
 	if (m_int16_0)
 	{
-		doStep = false;
+		doStep = 0;
 	}
 
 	if (doStep)
 	{
-		for (int i = 0; i < 1 && !m_int16_0; ++i)
+		for (int i = 0; i < doStep && !m_int16_0; ++i)
 		{
 			m_cpu.Step();
 		}
@@ -284,20 +284,23 @@ void Application::SetBIOSVars()
 #define SET_AH(b) m_cpu.SetRegB(CPU::AH, b)
 #define SET_AL(b) m_cpu.SetRegB(CPU::AL, b)
 #define SET_DH(b) m_cpu.SetRegB(CPU::DH, b)
+#define SET_BH(b) m_cpu.SetRegB(CPU::BH, b)
 #define SET_DL(b) m_cpu.SetRegB(CPU::DL, b)
 #define SET_CH(b) m_cpu.SetRegB(CPU::CH, b)
 #define SET_CL(b) m_cpu.SetRegB(CPU::CL, b)
-#define SET_CX(b) m_cpu.SetRegB(CPU::CX, b)
-#define SET_DX(b) m_cpu.SetRegB(CPU::DX, b)
+#define SET_CX(b) m_cpu.SetRegW(CPU::CX, b)
+#define SET_DX(b) m_cpu.SetRegW(CPU::DX, b)
+#define SET_AX(b) m_cpu.SetRegW(CPU::AX, b)
 #define GET_AH() m_cpu.GetRegB(CPU::AH)
 #define GET_BH() m_cpu.GetRegB(CPU::BH)
 #define GET_BL() m_cpu.GetRegB(CPU::BL)
 #define GET_CH() m_cpu.GetRegB(CPU::CH)
 #define GET_CL() m_cpu.GetRegB(CPU::CL)
-#define GET_CX() m_cpu.GetReg(CPU::CX)
-#define GET_DH() m_cpu.GetRegB(CPU::DH)
 #define GET_DL() m_cpu.GetRegB(CPU::DL)
+#define GET_DH() m_cpu.GetRegB(CPU::DH)
 #define GET_AL() m_cpu.GetRegB(CPU::AL)
+#define GET_AX() m_cpu.GetRegW(CPU::AX)
+#define GET_CX() m_cpu.GetRegW(CPU::CX)
 #define SET_DISK_RET_STATUS(status) StoreB(0x0040, 0x0074, status)
 #define SET_CF() m_cpu.SetFlag<CPU::CF>()
 #define CLEAR_CF() m_cpu.ClearFlag<CPU::CF>()
@@ -490,6 +493,25 @@ void Application::Int(CPU::byte x)
 			}
 		}
 		break;
+
+		case 0x0F:
+			/*
+				on return:
+				AH = number of screen columns
+				AL = mode currently set (see VIDEO MODES)
+				BH = current display page
+			*/
+		{
+			int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
+			int screenWidth = GetW(0x40, 0x004a);
+			int screenHeight = 25;
+			int mode = GetB(0x40, VIDEO_MOD);
+			SET_AH(screenWidth);
+			SET_AL(mode);
+			SET_BH(active_page);
+		}
+			break;
+
 		case 0x10:
 			switch (function)
 			{
@@ -575,20 +597,101 @@ void Application::Int(CPU::byte x)
 				int TrackNo = m_cpu.GetRegB(CPU::CH);
 				int SectorNo = m_cpu.GetRegB(CPU::CL);
 				int SectorNum = m_cpu.GetRegB(CPU::AL);
-				int ADDR = (((int)m_cpu.GetSeg(CPU::ES)) << 4) + m_cpu.GetRegW(CPU::BX);
+				int ADDR = _(m_cpu.GetSeg(CPU::ES), m_cpu.GetRegW(CPU::BX));
 
 				int LBA = (TrackNo * m_disk.GetBiosBlock().numHeads + HeadNo) * m_disk.GetBiosBlock().secPerTrk + SectorNo - 1;
 				ASSERT(LBA <= m_disk.GetBiosBlock().totSec16, "Error int13");
 				m_disk.Read((char *)m_ram + ADDR, 512 * LBA, 512 * SectorNum);
 				goto int13_success;
 			}
+		case 0x08:
+			/*
+			AH = 08
+			DL = drive number (0=A:, 1=2nd floppy, 80h=drive 0, 81h=drive 1)
 
+
+			on return:
+			AH = status  (see INT 13,STATUS)
+			BL = CMOS drive type
+			01 - 5¬  360K	     03 - 3«  720K
+			02 - 5¬  1.2Mb	     04 - 3« 1.44Mb
+			CH = cylinders (0-1023 dec. see below)
+			CL = sectors per track	(see below)
+			DH = number of sides (0 based)
+			DL = number of drives attached
+			ES:DI = pointer to 11 byte Disk Base Table (DBT)
+			CF = 0 if successful
+			= 1 if error
+
+
+			Cylinder and Sectors Per Track Format
+
+			|F|E|D|C|B|A|9|8|7|6|5|4|3|2|1|0|  CX
+			| | | | | | | | | | `------------  sectors per track
+			| | | | | | | | `------------	high order 2 bits of cylinder count
+			`------------------------  low order 8 bits of cylinder count
+
+			- the track/cylinder number is a 10 bit value taken from the 2 high
+			order bits of CL and the 8 bits in CH (low order 8 bits of track)
+			- many good programming references indicate this function is only
+			available on the AT, PS/2 and later systems, but all hard disk
+			systems since the XT have this function available
+			- only the disk number is checked for validity
+			*/
+			if (GET_DL() == m_disk.GetBiosBlock().drvNum)
+			{
+				SET_DH(1 + (m_disk.GetBiosBlock().numHeads - 1));
+				SET_CL(m_disk.GetBiosBlock().secPerTrk);
+				SET_CH((m_disk.GetBiosBlock().totSec16 / m_disk.GetBiosBlock().secPerTrk) / m_disk.GetBiosBlock().numHeads - 1);
+				goto int13_success;
+			}
+			else
+			{
+				SET_AH(1);
+			}
+			break;
 		case 0x10: /* disk controller reset */
 			goto int13_success;
 			break;
 		default:
 			FAIL("Unknown int13 function: 0x%s\n", n2hexstr(function).c_str());
 		}
+
+	case 0x14:
+		function = GET_AH();
+		switch (function)
+		{
+		case 0:
+			SET_AX(0);
+			break;
+		case 0x01:
+			SET_AX(0);
+			break;
+		default:
+			FAIL("Unknown int14 function: 0x%s\n", n2hexstr(function).c_str());
+		}
+		break;
+
+	case 0x15:
+		function = GET_AH();
+		switch (function)
+		{
+		case 0xC0:
+			m_cpu.SetRegW(CPU::BX, 0xe6f5);
+			m_cpu.SetRegW(CPU::ES, 0xf000);
+			m_cpu.ClearFlag<CPU::CF>();
+			break;
+		case 0x41:
+			break;
+		case 0x88:
+			m_cpu.SetRegW(CPU::AX, 0);
+			m_cpu.ClearFlag<CPU::CF>();
+			m_cpu.ClearFlag<CPU::CF>();
+			break;
+		default:
+			FAIL("Unknown int15 function: 0x%s\n", n2hexstr(function).c_str());
+		}
+		break;
 
 	case 0x16:
 		function = GET_AH();
@@ -600,6 +703,18 @@ void Application::Int(CPU::byte x)
 			break;
 		default:
 			FAIL("Unknown int16 function: 0x%s\n", n2hexstr(function).c_str());
+		}
+		break;
+
+	case 0x17:
+		function = GET_AH();
+		switch (function)
+		{
+		case 0x01:
+			SET_AX(0);
+			break;
+		default:
+			FAIL("Unknown int17 function: 0x%s\n", n2hexstr(function).c_str());
 		}
 		break;
 
@@ -618,6 +733,46 @@ void Application::Int(CPU::byte x)
 		CLEAR_CF(); // no error
 		break;
 
+	case 0x11:
+		/*
+		on return:
+	AX contains the following bit flags:
+
+	|F|E|D|C|B|A|9|8|7|6|5|4|3|2|1|0|  AX
+	 | | | | | | | | | | | | | | | `---- IPL diskette installed
+	 | | | | | | | | | | | | | | `----- math coprocessor
+	 | | | | | | | | | | | | `-------- old PC system board RAM < 256K
+	 | | | | | | | | | | | | | `----- pointing device installed (PS/2)
+	 | | | | | | | | | | | | `------ not used on PS/2
+	 | | | | | | | | | | `--------- initial video mode
+	 | | | | | | | | `------------ # of diskette drives, less 1
+	 | | | | | | | `------------- 0 if DMA installed
+	 | | | | `------------------ number of serial ports
+	 | | | `------------------- game adapter installed
+	 | | `-------------------- unused, internal modem (PS/2)
+	 `----------------------- number of printer ports
+
+
+	- bits 3 & 2,  system board RAM if less than 256K motherboard
+	    00 - 16K		     01 - 32K
+	    10 - 16K		     11 - 64K (normal)
+
+	- bits 5 & 4,  initial video mode
+	    00 - unused 	     01 - 40x25 color
+	    10 - 80x25 color	     11 - 80x25 monochrome
+
+
+	- bits 7 & 6,  number of disk drives attached, when bit 0=1
+	    00 - 1 drive	     01 - 2 drives
+	    10 - 3 drive	     11 - 4 drives
+
+
+	- returns data stored at BIOS Data Area location 40:10
+	- some flags are not guaranteed to be correct on all machines
+	- bit 13 is used on the PCjr to indicate serial printer
+
+	*/
+		SET_AX(1 + 2 * 0 + 4 * 1 + 8 * 0 + 16 * 0 + 32 * 0 + 64 * 0 + 128 * 0 + 256 * 0 + 512 * 1);
 	case 0x1a:
 		/*
 		AL = midnight flag, 1 if 24 hours passed since reset
