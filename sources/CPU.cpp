@@ -1401,6 +1401,16 @@ opcode_:
 			SetFlag<CF>(false);
 			SetFlag<OF>(false);
 			break;
+
+		case 0x9E:
+			CMD_NAME("SAHF");
+			m_flags = (m_flags & 0xFF) | GetRegB(AH);
+			break;
+
+		case 0x9F:
+			CMD_NAME("LAHF");
+			SetRegB(AH, m_flags);
+			break;
 	default:
 		UNKNOWN_OPCODE(OPCODE1);
 	}
