@@ -498,7 +498,7 @@ opcode_:
 	case 0xE8:
 		CMD_NAME("CALL");
 		{
-			uint16_t offset = GetIMM16();
+			int16_t offset = GetIMM16();
 			Push(IP);
 			IP += offset;
 			APPEND_HEX_DBG(m_segments[CS]);
@@ -635,9 +635,19 @@ opcode_:
 			APPEND_DBG("CS:");
 			APPEND_HEX_DBG(IP);
 			break;
+		case 0x06:
+			CMD_NAME("PUSH");
+			Push(OPERAND_A);
+			break;
 		default:
 			UNKNOWN_OPCODE(OPCODE2);
 		}
+		break;
+
+	case 0x98:
+		CMD_NAME("CBW");
+		OPERAND_A = (int8_t)GetRegB(0);
+		SetRegW(0, OPERAND_A);
 		break;
 
 	case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x47:
@@ -782,6 +792,13 @@ opcode_:
 			m_registers[AX] = Pop();
 			//m_segments[SP] = originalSP;
 		}
+		break;
+
+	case 0x8F:
+		CMD_NAME("POP");
+		ADDRESS_METHOD = r16;
+		MODREGRM = ExtractByte();
+		SetRM(Pop(), true);
 		break;
 
 	case 0xF6: case 0xF7:
@@ -1093,6 +1110,54 @@ opcode_:
 
 		break;
 
+	case 0xAE: case 0xAF:
+		ADDRESS_METHOD = OPCODE1 & 1;
+		if (REP || REPN)
+		{
+			times = m_registers[CX];
+		}
+		for (int i = 0; i < times; ++i)
+		{
+			CMD_NAME("SCAS");
+			OPERAND_A = GetReg(0);
+			APPEND_DBG(" [");
+			ADDRESS = GetSegment(ES) << 4;
+			APPEND_DBG(":");
+			ADDRESS += m_registers[DI];
+			APPEND_DBG("DI]");
+
+			if (Byte())
+			{
+				OPERAND_B = MemoryByte(ADDRESS);
+				m_registers[DI] += TestFlag<DF>() == 0 ? 1 : -1;
+			}
+			else
+			{
+				OPERAND_B = MemoryWord(ADDRESS);
+				m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
+			}
+
+			if (i != times - 1)
+			{
+#ifdef _DEBUG
+				*(dbg_args_ptr = dbg_args) = 0;
+#endif
+			}
+			if (REP || REPN)
+			{
+				m_registers[CX]--;
+			}
+			if (REP && (OPERAND_B != OPERAND_A))
+			{
+				break;
+			}
+			if (REPN && (OPERAND_B == OPERAND_A))
+			{
+				break;
+			}
+		}
+
+		break;
 
 	case 0xAC: case 0xAD:
 		ADDRESS_METHOD = OPCODE1 & 1;
@@ -1186,6 +1251,16 @@ opcode_:
 		OPERAND_B = MemoryWord(ADDRESS + 2);
 		SetReg(OPERAND_A);
 		SetSegment(ES, OPERAND_B);
+		break;
+
+	case 0x8D:
+		ADDRESS_METHOD = r16;
+		CMD_NAME("LEA");
+		MODREGRM = ExtractByte();
+		GetReg();
+		APPEND_DBG(", ");
+		SetRM_Address();
+		SetReg(ADDRESS);
 		break;
 
 	case 0xA4: case 0xA5:
