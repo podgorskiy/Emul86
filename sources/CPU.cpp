@@ -71,7 +71,7 @@ CPU::CPU()
 
 void CPU::Step()
 {
-	if (IP == 0x1142)
+	if (IP == 0x4DEF)
 	{
 		printf("");
 	}
@@ -906,8 +906,16 @@ opcode_:
 				OPERAND_A = (uint32_t)GetReg(0) + ((uint32_t)GetReg(DX) << 16);
 				APPEND_DBG(", ");
 				OPERAND_B = (uint16_t)GetRM();
-				m_registers[0] = OPERAND_A / OPERAND_B;
-				m_registers[DX] = OPERAND_A % OPERAND_B;
+				if (OPERAND_B == 0)
+				{
+					m_registers[0] = 0;
+					m_registers[DX] = 0;
+				}
+				else
+				{
+					m_registers[0] = OPERAND_A / OPERAND_B;
+					m_registers[DX] = OPERAND_A % OPERAND_B;
+				}
 			}
 			break;
 		case 0x07:
@@ -930,6 +938,30 @@ opcode_:
 			}
 			break;
 
+		case 0x03:
+			CMD_NAME("NEG");
+			if (Byte())
+			{
+				OPERAND_A = (int8_t)GetRM();
+				OPERAND_A = -OPERAND_A;
+				SetRM(OPERAND_A);
+				SetFlag<CF>(OPERAND_A != 0);
+			}
+			else
+			{
+				OPERAND_A = (int16_t)GetRM();
+				OPERAND_A = -OPERAND_A;
+				SetRM(OPERAND_A);
+				SetFlag<CF>(OPERAND_A != 0);
+			}
+			break;
+
+		case 0x02:
+			CMD_NAME("NOT");
+			OPERAND_A = GetRM();
+			OPERAND_A = ~OPERAND_A;
+			SetRM(OPERAND_A);
+			break;
 		default:
 			UNKNOWN_OPCODE(OPCODE2);
 		}
@@ -1545,6 +1577,144 @@ opcode_:
 		case 0x9F:
 			CMD_NAME("LAHF");
 			SetRegB(AH, m_flags);
+			break;
+
+		case 0xD5:
+			CMD_NAME("AAD");
+			{
+				int tempL = GetRegB(AL);
+				int tempH = GetRegB(AH);
+				SetRegB(AL, (tempL + (tempH * GetIMM8())) && 0xFF);
+				SetRegB(AH, 0);
+				RESULT = GetRegB(AL);
+				UpdateFlags_SFZFPF();
+				break;
+			}
+
+		case 0xD4:
+			CMD_NAME("AAM");
+			{
+				unsigned int tempL = GetRegB(AL);
+				unsigned int imm8 = GetIMM8();
+				SetRegB(AH, tempL / imm8);
+				SetRegB(AL, tempL % imm8);
+				RESULT = GetRegB(AL);
+				UpdateFlags_SFZFPF();
+				break;
+			}
+
+		case 0x37:
+			CMD_NAME("AAA");
+			{
+				int tempL = GetRegB(AL);
+				int tempH = GetRegB(AH);
+				if (tempL & 0x0F > 9 || TestFlag<AF>())
+				{
+					SetRegB(AL, tempL + 6);
+					SetRegB(AH, tempH + 1);
+					SetFlag<AF>();
+					SetFlag<CF>();
+				}
+				else
+				{
+					ClearFlag<AF>();
+					ClearFlag<CF>();
+				}
+				tempL = GetRegB(AL);
+				SetRegB(AL, tempL & 0xF);
+			}
+			break;
+
+		case 0x3F:
+			CMD_NAME("AAS");
+			{
+				int tempL = GetRegB(AL);
+				int tempH = GetRegB(AH);
+				if (tempL & 0x0F > 9 || TestFlag<AF>())
+				{
+					SetRegB(AL, tempL - 6);
+					SetRegB(AH, tempH - 1);
+					SetFlag<AF>();
+					SetFlag<CF>();
+				}
+				else
+				{
+					ClearFlag<AF>();
+					ClearFlag<CF>();
+				}
+				tempL = GetRegB(AL);
+				SetRegB(AL, tempL & 0xF);
+			}
+			break;
+
+		case 0x27:
+			CMD_NAME("DAA");
+			{
+				int tempL = GetRegB(AL);
+				int tempH = GetRegB(AH);
+				bool oldCF = TestFlag<CF>();
+				if (tempL & 0x0F > 9 || TestFlag<AF>())
+				{
+					SetRegB(AL, tempL + 6);
+					SetFlag<AF>();
+					SetFlag<CF>(TestFlag<CF>() || (0x100 & (tempL + 6)));
+				}
+				else
+				{
+					ClearFlag<AF>();
+				}
+				if (tempL > 0x99 || oldCF)
+				{
+					SetRegB(AL, GetRegB(AL) + 0x60);
+					SetFlag<CF>();
+				}
+				else
+				{
+					ClearFlag<CF>();
+				}
+				RESULT = GetRegB(AL);
+				UpdateFlags_SFZFPF();
+			}
+			break;
+
+		case 0x2F:
+			CMD_NAME("DAS");
+			{
+				int tempL = GetRegB(AL);
+				int tempH = GetRegB(AH);
+				bool oldCF = TestFlag<CF>();
+				if (tempL & 0x0F > 9 || TestFlag<AF>())
+				{
+					SetRegB(AL, tempL - 6);
+					SetFlag<AF>();
+					SetFlag<CF>(TestFlag<CF>() || (0x100 & (tempL - 6)));
+				}
+				else
+				{
+					ClearFlag<AF>();
+				}
+				if (tempL > 0x99 || oldCF)
+				{
+					SetRegB(AL, GetRegB(AL) - 0x60);
+					SetFlag<CF>();
+				}
+				else
+				{
+					ClearFlag<CF>();
+				}
+				RESULT = GetRegB(AL);
+				UpdateFlags_SFZFPF();
+			}
+			break;
+
+		case 0xF4:
+			CMD_NAME("HLT");
+			ASSERT(false, "HALT!");
+			break;
+
+		case 0xD9:
+			CMD_NAME("F2XM1");
+			GetIMM8();
 			break;
 	default:
 		UNKNOWN_OPCODE(OPCODE1);

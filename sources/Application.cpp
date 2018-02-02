@@ -22,6 +22,8 @@ inline bool gl3wIsSupported(int, int)
 
 #include <imgui.h>
 #include <simpletext.h>
+#include <chrono>
+#include <ctime>
 
 /*
 	40:49	byte	Current video mode  (see VIDEO MODE)
@@ -81,6 +83,8 @@ Application::Application()
 {
 }
 
+static std::chrono::time_point<std::chrono::system_clock> start;
+
 int Application::Init()
 {
 	m_ram = new CPU::byte[0x100000];
@@ -98,7 +102,8 @@ int Application::Init()
 	m_cpu.IP = loadAddress;
 	m_cpu.SetSegment(CPU::CS, 0);
 	m_int16_0 = false;
-
+	start = std::chrono::system_clock::now();
+	
 	return EXIT_SUCCESS;
 }
 
@@ -222,6 +227,9 @@ void Application::DrawScreen()
 		}
 	}
 	st.End();
+	auto now = std::chrono::system_clock::now();
+	std::chrono::duration<double> elapsed_seconds = now - start;
+	StoreW(0x0040, 0x006E, int(elapsed_seconds.count() * 1193180 / 65536));
 }
 
 void Application::StoreB(uint16_t offset, uint16_t location, uint8_t x)
@@ -259,7 +267,9 @@ void Application::SetBIOSVars()
 
 	StoreW(0x40, NUMBER_OF_SCREEN_COLUMNS, 80); // Screen width in text columns
 
-	StoreW(0x0, 0x78, 0xefc7); // pointer to diskette_param_table
+	StoreW(0x0, 0x78, 0xefde); // pointer to diskette_param_table
+	StoreW(0x0, 0xBC, 0xff53); // pointer to diskette_param_table
+	StoreW(0x0, 0x413, 0x027f); // pointer to diskette_param_table
 
 	uint8_t diskette_param_table[] = 
 	{
@@ -278,7 +288,34 @@ void Application::SetBIOSVars()
 		   0, // data transfer rate
 		   4  // drive type in cmos
 	};
-	memcpy(m_ram + 0xefc7, diskette_param_table, sizeof(diskette_param_table));
+
+
+	m_ram[0xfe6f5 + 0x00] = 0x08;
+	m_ram[0xfe6f5 + 0x01] = 0x00;
+	m_ram[0xfe6f5 + 0x02] = 0xFC;
+	m_ram[0xfe6f5 + 0x03] = 0x00;
+	m_ram[0xfe6f5 + 0x04] = 0x01;
+	m_ram[0xfe6f5 + 0x05] = 64 + 32;
+	m_ram[0xfe6f5 + 0x06] = 64;
+	m_ram[0xfe6f5 + 0x07] = 0;
+	m_ram[0xfe6f5 + 0x08] = 0;
+	m_ram[0xfe6f5 + 0x09] = 0;
+
+	memcpy(m_ram + 0xefde, diskette_param_table, sizeof(diskette_param_table));
+
+	int screenWidth = GetW(0x40, 0x004a);
+	int screenHeight = 25;
+
+	for (int page = 0; page < 8; ++page)
+	{
+		for (int row = 0; row < screenHeight; ++row)
+		{
+			for (int col = 0; col < screenWidth; ++col)
+			{
+				StoreB(0xB800, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * page + 1, 7);
+			}
+		}
+	}
 }
 
 #define SET_AH(b) m_cpu.SetRegB(CPU::AH, b)
@@ -304,6 +341,11 @@ void Application::SetBIOSVars()
 #define SET_DISK_RET_STATUS(status) StoreB(0x0040, 0x0074, status)
 #define SET_CF() m_cpu.SetFlag<CPU::CF>()
 #define CLEAR_CF() m_cpu.ClearFlag<CPU::CF>()
+
+inline uint8_t decToBcd(uint8_t val)
+{
+	return ((val / 10 * 16) + (val % 10));
+}
 
 void Application::Int(CPU::byte x)
 {
@@ -562,7 +604,7 @@ void Application::Int(CPU::byte x)
 
 	// Conventional Memory Size
 	case 0x12:
-		m_cpu.SetRegW(CPU::AX, MEMORY_SIZE_KB);
+		m_cpu.SetRegW(CPU::AX, MEMORY_SIZE_KB - 1);
 		break;
 	
 	// disk I/O service
@@ -653,6 +695,18 @@ void Application::Int(CPU::byte x)
 		case 0x10: /* disk controller reset */
 			goto int13_success;
 			break;
+
+		case 0x15: /* disk controller reset */
+			if (GET_DL() == m_disk.GetBiosBlock().drvNum)
+			{
+				SET_AH(1);
+			}
+			else
+			{
+				SET_AH(0);
+			}
+			break;
+
 		default:
 			FAIL("Unknown int13 function: 0x%s\n", n2hexstr(function).c_str());
 		}
@@ -678,8 +732,9 @@ void Application::Int(CPU::byte x)
 		{
 		case 0xC0:
 			m_cpu.SetRegW(CPU::BX, 0xe6f5);
-			m_cpu.SetRegW(CPU::ES, 0xf000);
+			m_cpu.SetSegment(CPU::ES, 0xf000);
 			m_cpu.ClearFlag<CPU::CF>();
+			m_cpu.SetRegB(CPU::AH, 0);
 			break;
 		case 0x41:
 			break;
@@ -773,16 +828,80 @@ void Application::Int(CPU::byte x)
 
 	*/
 		SET_AX(1 + 2 * 0 + 4 * 1 + 8 * 0 + 16 * 0 + 32 * 0 + 64 * 0 + 128 * 0 + 256 * 0 + 512 * 1);
+		break;
 	case 0x1a:
-		/*
-		AL = midnight flag, 1 if 24 hours passed since reset
-		CX = high order word of tick count
-		DX = low order word of tick count
-		*/
-		// TODO
-		SET_AL(0);
-		SET_CX(0);
-		SET_DX(0);
+		function = GET_AH();
+		switch (function)
+		{
+		case 0x00:
+			/*
+			AL = midnight flag, 1 if 24 hours passed since reset
+			CX = high order word of tick count
+			DX = low order word of tick count
+			*/
+			// TODO
+			{
+				auto now = std::chrono::system_clock::now();
+				std::chrono::duration<double> elapsed_seconds = now - start;
+				int ticks = int(elapsed_seconds.count() * 1193180 / 65536);
+				StoreW(0x0040, 0x006E, ticks & 0xFFFF);
+				StoreW(0x0040, 0x006E + 2, ticks >> 16);
+				SET_AL(0);
+				SET_CX(ticks >> 16);
+				SET_DX(ticks & 0xFFFF);
+			}
+			break;
+		case 0x02:
+		{
+			/*
+			CF = 0 if successful  = 1 if error, RTC not operating
+			CH = hours in BCD
+			CL = minutes in BCD
+			DH = seconds in BCD
+			DL = 1 if daylight savings time option*/
+			{
+				std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+				auto tm = std::localtime(&now);
+				SET_CH(decToBcd(tm->tm_hour));
+				SET_CL(decToBcd(tm->tm_min));
+				SET_DH(decToBcd(tm->tm_sec));
+				SET_DL(tm->tm_isdst);
+				CLEAR_CF();
+			}
+			break;
+		}
+		case 0x04:
+			/*
+			on return:
+			CH = century in BCD (decimal 19 or 20)
+			CL = year in BCD
+			DH = month in BCD
+			DL = day in BCD
+			CF = 0 if successful
+			   = 1 if error or clock not operating
+			*/
+			{
+				std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+				auto tm = std::localtime(&now);
+				SET_CH(decToBcd((tm->tm_year + 1900) / 100));
+				SET_CL(decToBcd(tm->tm_year % 100));
+				SET_DH(decToBcd(tm->tm_mon + 1));
+				SET_DL(tm->tm_mday);
+				CLEAR_CF();
+				break;
+			}
+		case 0x0a:
+		{
+			/*
+			on return:
+			CX = count of days since 1-1-1980n*/
+			std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+			int days = now / 3600 / 24 - 10 * 365 - 2;
+			SET_CX(days);
+			CLEAR_CF();
+			break;
+		}
+		}
 		break;
 
 	default:
@@ -797,11 +916,11 @@ void Application::scrollOneLine()
 	int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
 	int screenWidth = GetW(0x40, 0x004a);
 	int screenHeight = 25;
-	for (int row = 0; row <= screenHeight; ++row)
+	for (int row = 0; row < screenHeight; ++row)
 	{
-		if (row + 1 <= screenHeight)
+		if (row + 1 < screenHeight)
 		{
-			for (int col = 0; col <= screenWidth; ++col)
+			for (int col = 0; col < screenWidth; ++col)
 			{
 				int tmp = GetB(0xB800, (row + 1) * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page);
 				StoreB(0xB800, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, tmp);
@@ -809,7 +928,7 @@ void Application::scrollOneLine()
 		}
 		else
 		{
-			for (int col = 0; col <= screenWidth; ++col)
+			for (int col = 0; col < screenWidth; ++col)
 			{
 				StoreB(0xB800, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, 0);
 			}
