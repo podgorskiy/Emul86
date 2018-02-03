@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include "examples/opengl3_example/imgui_impl_glfw_gl3.h"
 #include <map>
+#include <list>
 
 /*
 		Key	 Normal    Shifted   w/Ctrl    w/Alt
@@ -113,6 +114,7 @@ enum
 	CTRL = 1 << 1,
 	ALT = 1 << 2
 };
+std::list<int> keyBuffer;
 
 int main(int argc, char **argv)
 {
@@ -262,7 +264,7 @@ int main(int argc, char **argv)
 	{
 		return EXIT_FAILURE;
 	}
-
+	
 	app->SetScale(scale);
 
 	{
@@ -288,19 +290,36 @@ int main(int argc, char **argv)
 			int code = keyCodes[index];
 
 			Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
-			if (action == GLFW_RELEASE && !app->KeyCallback(code))
-			{
-				ImGuiIO& io = ImGui::GetIO();
-				if (action == GLFW_PRESS)
-					io.KeysDown[key] = true;
-				if (action == GLFW_RELEASE)
-					io.KeysDown[key] = false;
 
-				io.KeyCtrl = io.KeysDown[GLFW_KEY_LEFT_CONTROL] || io.KeysDown[GLFW_KEY_RIGHT_CONTROL];
-				io.KeyShift = io.KeysDown[GLFW_KEY_LEFT_SHIFT] || io.KeysDown[GLFW_KEY_RIGHT_SHIFT];
-				io.KeyAlt = io.KeysDown[GLFW_KEY_LEFT_ALT] || io.KeysDown[GLFW_KEY_RIGHT_ALT];
-				io.KeySuper = io.KeysDown[GLFW_KEY_LEFT_SUPER] || io.KeysDown[GLFW_KEY_RIGHT_SUPER];
+			if (action == GLFW_RELEASE)
+			{
+				keyBuffer.push_back(code);
 			}
+
+			if (keyBuffer.size() > 0)
+			{
+				if (app->KeyCallback(keyBuffer.front()))
+				{
+					keyBuffer.pop_front();
+				}
+			}
+			else
+			{
+				app->ClearCurrentCode();
+			}
+
+			app->SetKeyFlags(KeysDown[GLFW_KEY_RIGHT_SHIFT], KeysDown[GLFW_KEY_LEFT_SHIFT], KeysDown[GLFW_KEY_RIGHT_CONTROL] | KeysDown[GLFW_KEY_LEFT_CONTROL], KeysDown[GLFW_KEY_RIGHT_ALT] | KeysDown[GLFW_KEY_LEFT_ALT]);
+
+			ImGuiIO& io = ImGui::GetIO();
+			if (action == GLFW_PRESS)
+				io.KeysDown[key] = true;
+			if (action == GLFW_RELEASE)
+				io.KeysDown[key] = false;
+
+			io.KeyCtrl = io.KeysDown[GLFW_KEY_LEFT_CONTROL] || io.KeysDown[GLFW_KEY_RIGHT_CONTROL];
+			io.KeyShift = io.KeysDown[GLFW_KEY_LEFT_SHIFT] || io.KeysDown[GLFW_KEY_RIGHT_SHIFT];
+			io.KeyAlt = io.KeysDown[GLFW_KEY_LEFT_ALT] || io.KeysDown[GLFW_KEY_RIGHT_ALT];
+			io.KeySuper = io.KeysDown[GLFW_KEY_LEFT_SUPER] || io.KeysDown[GLFW_KEY_RIGHT_SUPER];
 		});
 
 		glfwSetCharCallback(window, [](GLFWwindow* window, unsigned int c)

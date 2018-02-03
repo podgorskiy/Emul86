@@ -24,7 +24,7 @@ FILE* logfile;
 	int8_t rel8 = GetIMM8(); \
 	APPEND_HEX_DBG(m_segments[CS]);\
 	APPEND_DBG(":"); \
-	APPEND_HEX_DBG(IP); \
+	APPEND_HEX_DBG(uint16_t(IP + rel8)); \
 	if (condition) \
 	{ \
 		IP += rel8; \
@@ -35,7 +35,7 @@ FILE* logfile;
 	int16_t rel16 = GetIMM16(); \
 	APPEND_HEX_DBG(m_segments[CS]);\
 	APPEND_DBG(":"); \
-	APPEND_HEX_DBG(IP); \
+	APPEND_HEX_DBG(uint16_t(IP + rel16)); \
 	if (condition) \
 	{ \
 		IP += rel16; \
@@ -547,6 +547,34 @@ opcode_:
 		}
 		break;
 
+	case 0xEC: case 0xED:
+		CMD_NAME("IN");
+		ADDRESS_METHOD = OPCODE1 & 1;
+		ADDRESS = GetRegW(DX);
+		if (Byte())
+		{
+			SetReg(0, PortByte(ADDRESS));
+		}
+		else
+		{
+			SetReg(0, PortWord(ADDRESS));
+		}
+		break;
+
+	case 0xEE: case 0xEF:
+		CMD_NAME("OUT");
+		ADDRESS_METHOD = OPCODE1 & 1;
+		ADDRESS = GetRegW(DX);
+		if (Byte())
+		{
+			PortByte(ADDRESS) = GetReg(0);
+		}
+		else
+		{
+			PortWord(ADDRESS) = GetReg(0);
+		}
+		break;
+
 	case 0x6E:
 		CMD_NAME("OUTS");
 		{
@@ -555,7 +583,7 @@ opcode_:
 			{
 				offsetreg = m_segmentOverride;
 			}
-			PortByte(GetReg(DX)) = MemoryByte(_(GetSegment(offsetreg), GetReg(SI)));
+			PortByte(GetRegW(DX)) = MemoryByte(_(GetSegment(offsetreg), GetRegW(SI)));
 		}
 		break;
 
@@ -567,21 +595,21 @@ opcode_:
 			{
 				offsetreg = m_segmentOverride;
 			}
-			PortWord(GetReg(DX)) = MemoryWord(_(GetSegment(offsetreg), GetReg(SI)));
+			PortWord(GetRegW(DX)) = MemoryWord(_(GetSegment(offsetreg), GetRegW(SI)));
 		}
 		break;
 
 	case 0x6C:
 		CMD_NAME("INS");
 		{
-			MemoryByte(_(GetSegment(ES), GetReg(DI))) = PortByte(GetReg(DX));
+			MemoryByte(_(GetSegment(ES), GetRegW(DI))) = PortByte(GetRegW(DX));
 		}
 		break;
 
 	case 0x6D:
 		CMD_NAME("INS");
 		{
-			MemoryWord(_(GetSegment(ES), GetReg(DI))) = PortWord(GetReg(DX));
+			MemoryWord(_(GetSegment(ES), GetRegW(DI))) = PortWord(GetRegW(DX));
 		}
 		break;
 
@@ -770,6 +798,28 @@ opcode_:
 			CMD_NAME("JZ"); condition = TestFlag<ZF>(); CJMP16
 		case 0x8F:
 			CMD_NAME("JG"); condition = !TestFlag<ZF>() && (TestFlag<SF>() == TestFlag<OF>()); CJMP16
+		case 0x8D:
+			CMD_NAME("JGE"); condition = (TestFlag<SF>() == TestFlag<OF>()); CJMP16
+		case 0x8C:
+			CMD_NAME("JL"); condition = (TestFlag<SF>() != TestFlag<OF>()); CJMP16
+		case 0x8E:
+			CMD_NAME("JLE"); condition = TestFlag<ZF>() || (TestFlag<SF>() != TestFlag<OF>()); CJMP16
+		case 0x85:
+			CMD_NAME("JNE"); condition = !TestFlag<ZF>(); CJMP16
+		case 0x81:
+			CMD_NAME("JNO"); condition = !TestFlag<OF>(); CJMP16
+		case 0x8B:
+			CMD_NAME("JNP"); condition = !TestFlag<PF>(); CJMP16
+		case 0x89:
+			CMD_NAME("JNS"); condition = !TestFlag<SF>(); CJMP16
+		case 0x80:
+			CMD_NAME("JO"); condition = TestFlag<OF>(); CJMP16
+		case 0x8A:
+			CMD_NAME("JP"); condition = TestFlag<PF>(); CJMP16
+		case 0x88:
+			CMD_NAME("JS"); condition = TestFlag<SF>(); CJMP16
+		default:
+			UNKNOWN_OPCODE(OPCODE2);
 		}
 		break;
 
@@ -930,13 +980,13 @@ opcode_:
 			{
 				OPERAND_A = (int16_t)GetRegW(0);
 				APPEND_DBG(", ");
-				OPERAND_B = (int16_t)GetRM();
+				OPERAND_B = (int8_t)GetRM();
 				SetRegB(AL, OPERAND_A / OPERAND_B);
 				SetRegB(AH, (OPERAND_A % OPERAND_B));
 			}
 			else
 			{
-				OPERAND_A = (int32_t)GetRegW(0) + ((int32_t)GetRegW(DX) << 16);
+				OPERAND_A = (int32_t)(GetRegW(0) + ((uint32_t)GetRegW(DX) << 16));
 				APPEND_DBG(", ");
 				OPERAND_B = (int16_t)GetRM();
 				m_registers[0] = OPERAND_A / OPERAND_B;
@@ -1318,6 +1368,25 @@ opcode_:
 		m_segments[CS] = Pop();
 		break;
 
+	case 0xC2:
+		CMD_NAME("RET");
+		{
+			int countToPop = GetIMM16();
+			IP = Pop();
+			m_registers[SP] += countToPop;
+		}
+		break;
+
+	case 0xCA:
+		CMD_NAME("RET");
+		{
+			int countToPop = GetIMM16();
+			IP = Pop();
+			m_segments[CS] = Pop();
+			m_registers[SP] += countToPop;
+		}
+		break;
+
 	case 0xCF:
 		CMD_NAME("IRET");
 		IP = Pop();
@@ -1376,11 +1445,11 @@ opcode_:
 			}
 			word src_seg = GetSegment(src_offsetreg);
 			APPEND_DBG(":");
-			word src_offset = GetReg(SI);
+			word src_offset = GetRegW(SI);
 			APPEND_DBG(", ");
 			word dst_seg = GetSegment(ES);
 			APPEND_DBG(":");
-			word dst_offset = GetReg(DI);
+			word dst_offset = GetRegW(DI);
 			if (OPCODE1 & 1)
 			{
 				MemoryWord(_(dst_seg, dst_offset)) = MemoryWord(_(src_seg, src_offset));
@@ -1504,11 +1573,11 @@ opcode_:
 				}
 				word src_seg = GetSegment(src_offsetreg);
 				APPEND_DBG(":");
-				word src_offset = GetReg(SI);
+				word src_offset = GetRegW(SI);
 				APPEND_DBG(", ");
 				word dst_seg = GetSegment(ES);
 				APPEND_DBG(":");
-				word dst_offset = GetReg(DI);
+				word dst_offset = GetRegW(DI);
 				if (OPCODE1 & 1)
 				{
 					OPERAND_A = MemoryWord(_(src_seg, src_offset));
@@ -1721,8 +1790,13 @@ opcode_:
 		case 0xD9:
 			CMD_NAME("F2XM1");
 			GetIMM8();
+			ASSERT(false, "No FPU");
 			break;
 
+		case 0x9B:
+			CMD_NAME("WAIT");
+			ASSERT(false, "No WAIT implementation");
+			break;
 
 		case 0xD7:
 			CMD_NAME("XLAT");
@@ -1736,6 +1810,8 @@ opcode_:
 				SetRegB(AL, MemoryByte(_(seg, GetRegW(BX) + uint16_t(GetRegB(AL)))));
 			}
 			break;
+
+
 	default:
 		UNKNOWN_OPCODE(OPCODE1);
 	}

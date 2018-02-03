@@ -45,7 +45,7 @@ inline bool gl3wIsSupported(int, int)
 */
 enum
 {
-	MEMORY_SIZE_KB = 0x0280,
+	MEMORY_SIZE_KB = 0x0400,
 	VIDEO_MOD = 0x0049,
 	NUMBER_OF_SCREEN_COLUMNS = 0x004A,
 	CURSOR_POSITION = 0x0050,
@@ -87,9 +87,9 @@ static std::chrono::time_point<std::chrono::system_clock> start;
 
 int Application::Init()
 {
-	m_ram = new CPU::byte[0x100000];
+	m_ram = new CPU::byte[0x200000];
 	m_port = new CPU::byte[0x10000];
-	memset(m_ram, 0, 0x100000);
+	memset(m_ram, 0, 0x200000);
 	memset(m_port, 0, 0x10000);
 	m_cpu.SetRamPort(m_ram, m_port);
 	m_cpu.SetInterruptHandler(this);
@@ -103,6 +103,7 @@ int Application::Init()
 	m_cpu.SetSegment(CPU::CS, 0);
 	m_int16_0 = false;
 	start = std::chrono::system_clock::now();
+	m_currentKeyCode = 0;
 	
 	return EXIT_SUCCESS;
 }
@@ -130,7 +131,7 @@ void Application::Update()
 {
 	static bool run = false;
 
-	uint16_t stopAt = 0x096A;
+	uint32_t stopAt = -1;
 	if (m_cpu.IP == stopAt)
 	{
 		run = false;
@@ -360,7 +361,9 @@ void Application::SetBIOSVars()
 #define GET_CX() m_cpu.GetRegW(CPU::CX)
 #define SET_DISK_RET_STATUS(status) StoreB(0x0040, 0x0074, status)
 #define SET_CF() m_cpu.SetFlag<CPU::CF>()
+#define SET_ZF() m_cpu.SetFlag<CPU::ZF>()
 #define CLEAR_CF() m_cpu.ClearFlag<CPU::CF>()
+#define CLEAR_ZF() m_cpu.ClearFlag<CPU::ZF>()
 
 inline uint8_t decToBcd(uint8_t val)
 {
@@ -498,9 +501,6 @@ void Application::Int(CPU::byte x)
 				{
 					column = 0;
 				}
-				else if (symbol == '\b')
-				{
-				}
 				else
 				{
 					StoreB(0xB800, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page, symbol);
@@ -553,6 +553,27 @@ void Application::Int(CPU::byte x)
 					row++;
 				}
 			}
+		}
+		break;
+
+		case 0x08:
+			/*
+			AH = 08
+			BH = display page
+			on return:
+			AH = attribute of character (alpha modes only)
+			AL = character at cursor position
+			- in video mode 4 (300x200 4 color) on the EGA, MCGA and VGA
+			this function works only on page zero
+			*/
+		{
+			char page = GET_BH();
+			int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
+			int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
+			int screenWidth = GetW(0x40, 0x004a);
+			int screenHeight = 25;
+			uint16_t result = GetW(0xB800, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page);
+			SET_AX(result);
 		}
 		break;
 
@@ -624,7 +645,7 @@ void Application::Int(CPU::byte x)
 
 	// Conventional Memory Size
 	case 0x12:
-		m_cpu.SetRegW(CPU::AX, MEMORY_SIZE_KB - 1);
+		m_cpu.SetRegW(CPU::AX, MEMORY_SIZE_KB);
 		break;
 	
 	// disk I/O service
@@ -702,13 +723,16 @@ void Application::Int(CPU::byte x)
 			*/
 			if (GET_DL() == m_disk.GetBiosBlock().drvNum)
 			{
-				SET_DH(1 + (m_disk.GetBiosBlock().numHeads - 1));
+				SET_DH(m_disk.GetBiosBlock().numHeads - 1);
 				SET_CL(m_disk.GetBiosBlock().secPerTrk);
 				SET_CH((m_disk.GetBiosBlock().totSec16 / m_disk.GetBiosBlock().secPerTrk) / m_disk.GetBiosBlock().numHeads - 1);
+				SET_DL(1);
 				goto int13_success;
 			}
 			else
 			{
+				SET_DL(1);
+				goto int13_success;
 				SET_AH(1);
 			}
 			break;
@@ -728,6 +752,7 @@ void Application::Int(CPU::byte x)
 			break;
 
 		default:
+			goto int13_fail;
 			FAIL("Unknown int13 function: 0x%s\n", n2hexstr(function).c_str());
 		}
 
@@ -772,6 +797,42 @@ void Application::Int(CPU::byte x)
 		function = GET_AH();
 		switch (function)
 		{
+		case 0x01:
+			/*
+			on return:
+			ZF = 0 if a key pressed (even Ctrl-Break)
+			AX = 0 if no scan code is available
+			AH = scan code
+			AL = ASCII character or zero if special function key
+			*/
+			if (m_currentKeyCode != 0)
+			{
+				SET_AX(m_currentKeyCode);
+				CLEAR_ZF();
+			}
+			else
+			{
+				SET_AX(0);
+				SET_ZF();
+			}
+			break;
+		case 0x02:
+			/*
+			on return:
+			AL = BIOS keyboard flags (located in BIOS Data Area 40:17)
+
+			|7|6|5|4|3|2|1|0|  AL or BIOS Data Area 40:17
+			| | | | | | | `---- right shift key depressed
+			| | | | | | `----- left shift key depressed
+			| | | | | `------ CTRL key depressed
+			| | | | `------- ALT key depressed
+			| | | `-------- scroll-lock is active
+			| | `--------- num-lock is active
+			| `---------- caps-lock is active
+			`----------- insert is active
+			*/
+			SET_AL(GetB(0x0040, 0x0017));
+			break;
 		case 0x00:
 		case 0x10:
 			m_int16_0 = true;
@@ -958,6 +1019,7 @@ void Application::scrollOneLine()
 
 bool Application::KeyCallback(int c)
 {
+	m_currentKeyCode = c;
 	if (m_int16_0)
 	{
 		m_cpu.SetRegW(CPU::AX, c);

@@ -338,11 +338,11 @@ private:
 
 			if (Byte())
 			{
-				return MemoryByte(ADDRESS);
+				return MemoryByte(ADDRESS & 0xFFFFF);
 			}
 			else
 			{
-				return MemoryWord(ADDRESS);
+				return MemoryWord(ADDRESS & 0xFFFFF);
 			}
 		}
 	}
@@ -362,11 +362,11 @@ private:
 
 			if (Byte())
 			{
-				MemoryByte(ADDRESS) = x;
+				MemoryByte(ADDRESS & 0xFFFFF) = x;
 			}
 			else
 			{
-				MemoryWord(ADDRESS) = x;
+				MemoryWord(ADDRESS & 0xFFFFF) = x;
 			}
 		}
 	}
