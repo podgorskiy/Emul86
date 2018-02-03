@@ -128,6 +128,14 @@ void Application::SetScale(int scale)
 
 void Application::Update()
 {
+	static bool run = false;
+
+	uint16_t stopAt = 0x096A;
+	if (m_cpu.IP == stopAt)
+	{
+		run = false;
+	}
+
 	int doStep = 0;
 	ImGui::Begin("Execution control");
 	if (ImGui::Button("Step"))
@@ -135,7 +143,6 @@ void Application::Update()
 		doStep = 1;
 	}
 	ImGui::SameLine();
-	static bool run = false;
 	ImGui::Checkbox("Run", &run);
 	if (run)
 	{
@@ -153,6 +160,11 @@ void Application::Update()
 		for (int i = 0; i < doStep && !m_int16_0; ++i)
 		{
 			m_cpu.Step();
+			if (m_cpu.IP == stopAt)
+			{
+				run = false;
+				break;
+			}
 		}
 	}
 
@@ -170,6 +182,14 @@ void Application::Update()
 	if (ImGui::Button("Mount mikeos.dmg"))
 	{
 		m_disk.Open("mikeos.dmg");
+	}
+	if (ImGui::Button("Mount freedos722.img"))
+	{
+		m_disk.Open("freedos722.img");
+	}
+	if (ImGui::Button("Mount Dos3.3.img"))
+	{
+		m_disk.Open("Dos3.3.img");
 	}
 	
 	static int loadAddress = 0x7C00;

@@ -71,10 +71,6 @@ CPU::CPU()
 
 void CPU::Step()
 {
-	if (IP == 0x4DEF)
-	{
-		printf("");
-	}
 	dbg_args_ptr = dbg_args;
 	dbg_args[0] = 0;
 	
@@ -629,6 +625,12 @@ opcode_:
 			APPEND_DBG("CS:");
 			APPEND_HEX_DBG(IP);
 			break;
+		case 0x04:
+			CMD_NAME("JMP");
+			IP = OPERAND_A;
+			APPEND_DBG("CS:");
+			APPEND_HEX_DBG(IP);
+			break;
 		case 0x05:
 			CMD_NAME("JMP");
 			IP = OPERAND_A;
@@ -872,18 +874,22 @@ opcode_:
 			break;
 		case 0x05:
 			CMD_NAME("IMUL");
-			OPERAND_A = (int16_t)GetReg(0);
-			APPEND_DBG(", ");
-			OPERAND_B = (int16_t)GetRM();
-			RESULT = OPERAND_A * OPERAND_B;
 			if (Byte())
 			{
+				OPERAND_A = (int8_t)GetReg(0);
+				APPEND_DBG(", ");
+				OPERAND_B = (int8_t)GetRM();
+				RESULT = OPERAND_A * OPERAND_B;
 				m_registers[0] = RESULT;
 				SetFlag<OF>(RESULT & 0xFF00);
 				SetFlag<CF>(RESULT & 0xFF00);
 			}
 			else
 			{
+				OPERAND_A = (int16_t)GetReg(0);
+				APPEND_DBG(", ");
+				OPERAND_B = (int16_t)GetRM();
+				RESULT = OPERAND_A * OPERAND_B;
 				m_registers[0] = RESULT;
 				m_registers[DX] = RESULT >> 16;
 				SetFlag<OF>(RESULT & 0xFFFF0000);
@@ -895,15 +901,15 @@ opcode_:
 			CMD_NAME("DIV");
 			if (Byte())
 			{
-				OPERAND_A = (uint16_t)GetReg(0);
+				OPERAND_A = (uint16_t)GetRegW(0);
 				APPEND_DBG(", ");
 				OPERAND_B = (uint16_t)GetRM();
-				SetReg(AL, OPERAND_A / OPERAND_B);
-				SetReg(AH, (OPERAND_A % OPERAND_B));
+				SetRegB(AL, OPERAND_A / OPERAND_B);
+				SetRegB(AH, (OPERAND_A % OPERAND_B));
 			}
 			else
 			{
-				OPERAND_A = (uint32_t)GetReg(0) + ((uint32_t)GetReg(DX) << 16);
+				OPERAND_A = (uint32_t)GetRegW(0) + ((uint32_t)GetRegW(DX) << 16);
 				APPEND_DBG(", ");
 				OPERAND_B = (uint16_t)GetRM();
 				if (OPERAND_B == 0)
@@ -922,15 +928,15 @@ opcode_:
 			CMD_NAME("IDIV");
 			if (Byte())
 			{
-				OPERAND_A = (int16_t)GetReg(0);
+				OPERAND_A = (int16_t)GetRegW(0);
 				APPEND_DBG(", ");
 				OPERAND_B = (int16_t)GetRM();
-				SetReg(AL, OPERAND_A / OPERAND_B);
-				SetReg(AH, (OPERAND_A % OPERAND_B));
+				SetRegB(AL, OPERAND_A / OPERAND_B);
+				SetRegB(AH, (OPERAND_A % OPERAND_B));
 			}
 			else
 			{
-				OPERAND_A = (int32_t)GetReg(0) + ((int32_t)GetReg(DX) << 16);
+				OPERAND_A = (int32_t)GetRegW(0) + ((int32_t)GetRegW(DX) << 16);
 				APPEND_DBG(", ");
 				OPERAND_B = (int16_t)GetRM();
 				m_registers[0] = OPERAND_A / OPERAND_B;
@@ -1352,7 +1358,7 @@ opcode_:
 		GetReg();
 		APPEND_DBG(", ");
 		SetRM_Address();
-		SetReg(ADDRESS);
+		SetReg(EFFECTIVE_ADDRESS);
 		break;
 
 	case 0xA4: case 0xA5:
@@ -1716,6 +1722,20 @@ opcode_:
 			CMD_NAME("F2XM1");
 			GetIMM8();
 			break;
+
+
+		case 0xD7:
+			CMD_NAME("XLAT");
+			{
+				byte offsetreg = DS;
+				if (m_segmentOverride != NONE)
+				{
+					offsetreg = m_segmentOverride;
+				}
+				word seg = GetSegment(offsetreg);
+				SetRegB(AL, MemoryByte(_(seg, GetRegW(BX) + uint16_t(GetRegB(AL)))));
+			}
+			break;
 	default:
 		UNKNOWN_OPCODE(OPCODE1);
 	}
@@ -1731,13 +1751,13 @@ opcode_:
 
 	for (int i = 0; i < 8; ++i)
 	{
-		//n2hexstr(buff, m_registers[i]); fprintf(logfile, buff);
+		n2hexstr(buff, m_registers[i]); fprintf(logfile, buff);
 	}
 	for (int i = 0; i < 4; ++i)
 	{
-		//n2hexstr(buff, m_segments[i]); fprintf(logfile, buff);
+		n2hexstr(buff, m_segments[i]); fprintf(logfile, buff);
 	}
-	//fprintf(logfile, "\n");
+	fprintf(logfile, "\n");
 }
 
 void CPU::Interrupt(int n)

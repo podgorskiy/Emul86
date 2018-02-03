@@ -377,21 +377,17 @@ private:
 		int32_t disp = 0;
 		byte offsetreg = DS;
 		APPEND_DBG("[");
-		if (m_segmentOverride != NONE)
-		{
-			offsetreg = m_segmentOverride;
-		}
 		APPEND_DBG(m_segNames[offsetreg]);
 		APPEND_DBG(": ");
 		switch (MODREGRM & RM)
 		{
 			case 0: reg = (int32_t)m_registers[BX] + m_registers[SI]; APPEND_DBG("BX + SI"); break;
 			case 1: reg = (int32_t)m_registers[BX] + m_registers[DI]; APPEND_DBG("BX + DI"); break;
-			case 2: reg = (int32_t)m_registers[BP] + m_registers[SI]; offsetreg = BP;  APPEND_DBG("BP + SI"); break;
-			case 3: reg = (int32_t)m_registers[BP] + m_registers[DI]; offsetreg = BP;  APPEND_DBG("BP + DI"); break;
+			case 2: reg = (int32_t)m_registers[BP] + m_registers[SI]; offsetreg = SS;  APPEND_DBG("BP + SI"); break;
+			case 3: reg = (int32_t)m_registers[BP] + m_registers[DI]; offsetreg = SS;  APPEND_DBG("BP + DI"); break;
 			case 4: reg = (int32_t)m_registers[SI]; APPEND_DBG("SI"); break;
 			case 5: reg = (int32_t)m_registers[DI]; APPEND_DBG("DI"); break;
-			case 6: if ((MODREGRM & MOD) != 0) { reg = m_registers[BP]; offsetreg = BP; APPEND_DBG("BP")  } else { reg = GetIMM16(); APPEND_HEXN_DBG(reg, 4); } break;
+			case 6: if ((MODREGRM & MOD) != 0) { reg = m_registers[BP]; offsetreg = SS; APPEND_DBG("BP")  } else { reg = GetIMM16(); APPEND_HEXN_DBG(reg, 4); } break;
 			case 7: reg = m_registers[BX]; APPEND_DBG("BX") break;
 		}
 		if ((MODREGRM & MOD) == 0x40)
@@ -409,6 +405,11 @@ private:
 			disp = disp16; // sign extension
 		}
 		APPEND_DBG("]");
+		EFFECTIVE_ADDRESS = reg + disp;
+		if (m_segmentOverride != NONE)
+		{
+			offsetreg = m_segmentOverride;
+		}
 		ADDRESS = _(m_segments[offsetreg], reg + disp);
 	}
 	
@@ -579,6 +580,7 @@ private:
 	byte ADDRESS_METHOD;
 	byte MODREGRM;
 	int32_t ADDRESS;
+	int32_t EFFECTIVE_ADDRESS;
 
 	byte OPCODE1;
 	byte OPCODE2;
