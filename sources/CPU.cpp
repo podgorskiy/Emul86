@@ -1965,6 +1965,7 @@ opcode_:
 		break;
 
 	case 0xA4: case 0xA5:
+		ADDRESS_METHOD = OPCODE1 & 1;
 		if (REP)
 		{
 			times = m_registers[CX];
@@ -2099,6 +2100,7 @@ opcode_:
 			break;
 
 		case 0xA6: case 0xA7:
+			ADDRESS_METHOD = OPCODE1 & 1;
 			if (REP || REPN)
 			{
 				times = m_registers[CX];
@@ -2121,18 +2123,7 @@ opcode_:
 				APPEND_DBG(":");
 				APPEND_DBG_REGW(DI);
 				word dst_offset = GetRegW(DI);
-				if (OPCODE1 & 1)
-				{
-					OPERAND_A = MemoryWord(select(src_seg, src_offset));
-					OPERAND_B = MemoryWord(select(dst_seg, dst_offset));
-					OPERAND_B = -OPERAND_B;
-					RESULT = OPERAND_A + OPERAND_B;
-					UpdateFlags_CFOFAF();
-					UpdateFlags_SFZFPF();
-					m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
-					m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
-				}
-				else
+				if (Byte())
 				{
 					OPERAND_A = MemoryByte(select(src_seg, src_offset));
 					OPERAND_B = MemoryByte(select(dst_seg, dst_offset));
@@ -2142,6 +2133,17 @@ opcode_:
 					UpdateFlags_SFZFPF();
 					m_registers[SI] += TestFlag<DF>() == 0 ? 1 : -1;
 					m_registers[DI] += TestFlag<DF>() == 0 ? 1 : -1;
+				}
+				else
+				{
+					OPERAND_A = MemoryWord(select(src_seg, src_offset));
+					OPERAND_B = MemoryWord(select(dst_seg, dst_offset));
+					OPERAND_B = -OPERAND_B;
+					RESULT = OPERAND_A + OPERAND_B;
+					UpdateFlags_CFOFAF();
+					UpdateFlags_SFZFPF();
+					m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
+					m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
 				}
 				if (i != times - 1)
 				{
