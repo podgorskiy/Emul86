@@ -3,9 +3,7 @@
 #include <string>
 #include <imgui.h>
 
-extern const uint8_t parity[0x100];
-
-template <typename I> 
+template <typename I>
 inline std::string n2hexstr(I w, size_t hex_len = sizeof(I) << 1)
 {
 	static const char* digits = "0123456789ABCDEF";
@@ -25,7 +23,7 @@ inline char* n2hexstr(char* dst, I w, size_t hex_len = sizeof(I) << 1)
 	return &(*(dst + hex_len) = '\x0');
 }
 
-inline uint32_t _(uint16_t seg, uint16_t off)
+inline uint32_t select(uint16_t seg, uint16_t off)
 {
 	return (((uint32_t)seg) << 4) + off;
 }
@@ -48,7 +46,7 @@ dbg_args_ptr = n2hexstr(dbg_args_ptr, X)
 #define APPEND_HEXN_DBG(X,N) \
 dbg_args_ptr = n2hexstr(dbg_args_ptr, X, N)
 #else
-#define APPEND_HEXN_DBG(X)
+#define APPEND_HEXN_DBG(X, N)
 #endif
 
 #ifdef _DEBUG
@@ -79,57 +77,6 @@ public:
 		ES = 0, CS = 1, SS = 2, DS = 3, NONE = 4
 	};
 
-	CPU();
-
-	void Step();
-
-	void GUI();
-
-	void SetRamPort(byte* ram, byte* port)
-	{
-		m_ram = ram;
-		m_port = port;
-	}
-
-	void SetInterruptHandler(InterruptHandler* interruptHandler)
-	{
-		m_interruptHandler = interruptHandler;
-	}
-
-	inline byte GetRegB(byte i)
-	{
-		byte* reg8file = (byte*)m_registers;
-		byte _i = (i & 0x3) << 1 | ((i & 0x4) >> 2);
-		return reg8file[_i];
-	}
-	inline word GetRegW(byte i)
-	{
-		return m_registers[i];
-	}
-	inline void SetRegB(byte i, byte x)
-	{
-		byte* reg8file = (byte*)m_registers;
-		byte _i = (i & 0x3) << 1 | ((i & 0x4) >> 2);
-		reg8file[_i] = x;
-	}
-	inline void SetRegW(byte i, word x)
-	{
-		m_registers[i] = x;
-	}
-	inline word GetSeg(byte i)
-	{
-		return m_segments[i];
-	}
-	inline void SetSegment(byte i, word v)
-	{
-		m_segments[i] = v;
-	}
-	
-	void INT(byte x)
-	{
-		m_interruptHandler->Int(x);
-	}
-
 	enum Flags
 	{
 		CF = 0,
@@ -146,6 +93,32 @@ public:
 		NT = 14,
 		RESERVERD = 15
 	};
+
+	CPU();
+
+	void Step();
+
+	void GUI();
+
+	void SetRamPort(byte* ram, byte* port);
+
+	void SetInterruptHandler(InterruptHandler* interruptHandler);
+
+	void Reset();
+
+	byte GetRegB(byte i);
+
+	word GetRegW(byte i);
+
+	void SetRegB(byte i, byte x);
+
+	void SetRegW(byte i, word x);
+
+	word GetSegment(byte i);
+
+	void SetSegment(byte i, word v);
+
+	void INT(byte x);
 
 	template<Flags F>
 	inline bool TestFlag()
@@ -166,40 +139,28 @@ public:
 	}
 
 	template<Flags F>
+	inline void SetFlag(uint32_t x)
+	{
+		SetFlag<F>(x != 0);
+	}
+
+	template<Flags F>
 	inline void ClearFlag()
 	{
 		m_flags &= ~(1 << F);
 	}
 
-	inline word GetReg(byte i)
-	{
-		if (Byte())
-		{
-			APPEND_DBG(m_regNames[i]);
-			return GetRegB(i);
-		}
-		else
-		{
-			APPEND_DBG(m_regNames[i + 8]);
-			return m_registers[i];
-		}
-	}
+	word GetReg(byte i);
 
-	inline void SetReg(byte i, word x)
-	{
-		if (Byte())
-		{
-			SetRegB(i, x & 0xFF);
-		}
-		else
-		{
-			m_registers[i] = x;
-		}
-	}
+	void SetReg(byte i, word x);
 
 	void Interrupt(int n);
 
 	word IP;
+
+	void EnableA20Gate();
+	void DisableA20Gate();
+	bool GetA20GateStatus();
 
 private:
 	enum DataSize
@@ -225,343 +186,59 @@ private:
 		RM  = 0b00000111
 	};
 
+	inline void PrepareOperands(bool signextend = false);
 	
-	inline void PrepareOperands(bool signextend = false)
-	{
-		switch (ADDRESS_METHOD & DataDirectionMask)
-		{
-		case RM_REG:
-			MODREGRM = ExtractByte();
-			OPERAND_A = GetRM();
-			APPEND_DBG(", ");
-			OPERAND_B = GetReg();
-			break;
-		case REG_RM:
-			MODREGRM = ExtractByte();
-			OPERAND_A = GetReg();
-			APPEND_DBG(", ");
-			OPERAND_B = GetRM();
-			break;
-		case AXL_IMM:
-			OPERAND_A = GetReg(0);
-			APPEND_DBG(", 0x");
-			if (Byte())
-			{
-				byte data = GetIMM8();
-				OPERAND_B = data;
-				APPEND_HEX_DBG(data);
-			}
-			else
-			{
-				OPERAND_B = GetIMM16();
-				APPEND_HEX_DBG(OPERAND_B);
-			}
-			break;
-		case RM_IMM:
-			MODREGRM = ExtractByte();
-			OPERAND_A = GetRM();
-			APPEND_DBG(", 0x");
-			if (Byte())
-			{
-				byte data = GetIMM8();
-				OPERAND_B = data;
-				APPEND_HEX_DBG(data);
-			}
-			else
-			{
-				if (signextend)
-				{
-					int8_t data = GetIMM8();
-					int16_t data16 = data;
-					OPERAND_B = data16;
-					APPEND_HEX_DBG(data);
-				}
-				else
-				{
-					OPERAND_B = GetIMM16();
-					APPEND_HEX_DBG(OPERAND_B);
-				}
-			}
-			break;
-		}
-	}
+	inline bool Byte();
+
+	inline word GetReg();
+
+	inline void SetReg(word x);
+
+	inline uint8_t& MemoryByte(uint32_t address);
+
+	inline uint16_t& MemoryWord(uint32_t address);
+
+	inline uint8_t& PortByte(uint32_t address);
+
+	inline uint16_t& PortWord(uint32_t address);
+
+	inline word GetRM();
+
+	inline void SetRM(word x, bool computeAddress = false);
+
+	inline void SetRM_Address();
 	
-	inline word GetSegment(byte i)
-	{
-		APPEND_DBG(m_segNames[i]);
-		return m_segments[i];
-	}
+	inline void StoreResult();
 
-	inline bool Byte()
-	{
-		return (ADDRESS_METHOD & rMask) == r8;
-	}
-
-	inline word GetReg()
-	{
-		return GetReg((MODREGRM & REG) >> 3);
-	}
-
-	inline void SetReg(word x)
-	{
-		SetReg((MODREGRM & REG) >> 3, x);
-	}
-
-	inline uint8_t& MemoryByte(uint32_t address)
-	{
-		return *(m_ram + address);
-	}
-
-	inline uint16_t& MemoryWord(uint32_t address)
-	{
-		return *reinterpret_cast<uint16_t*>(m_ram + address);
-	}
-	inline uint8_t& PortByte(uint32_t address)
-	{
-		return *(m_port + address);
-	}
-	inline uint16_t& PortWord(uint32_t address)
-	{
-		return *reinterpret_cast<uint16_t*>(m_port + address);
-	}
-
-
-	inline word GetRM()
-	{
-		if ((MODREGRM & MOD) == MOD)
-		{
-			return GetReg(MODREGRM & RM);
-		}
-		else
-		{
-			SetRM_Address();
-
-			if (Byte())
-			{
-				return MemoryByte(ADDRESS & 0xFFFFF);
-			}
-			else
-			{
-				return MemoryWord(ADDRESS & 0xFFFFF);
-			}
-		}
-	}
-
-	inline void SetRM(word x, bool computeAddress = false)
-	{
-		if ((MODREGRM & MOD) == MOD)
-		{
-			SetReg(MODREGRM & RM, x);
-		}
-		else
-		{
-			if (computeAddress)
-			{
-				SetRM_Address();
-			}
-
-			if (Byte())
-			{
-				MemoryByte(ADDRESS & 0xFFFFF) = x;
-			}
-			else
-			{
-				MemoryWord(ADDRESS & 0xFFFFF) = x;
-			}
-		}
-	}
-
-	inline void SetRM_Address()
-	{
-		int32_t reg = 0;
-		int32_t disp = 0;
-		byte offsetreg = DS;
-		APPEND_DBG("[");
-		APPEND_DBG(m_segNames[offsetreg]);
-		APPEND_DBG(": ");
-		switch (MODREGRM & RM)
-		{
-			case 0: reg = (int32_t)m_registers[BX] + m_registers[SI]; APPEND_DBG("BX + SI"); break;
-			case 1: reg = (int32_t)m_registers[BX] + m_registers[DI]; APPEND_DBG("BX + DI"); break;
-			case 2: reg = (int32_t)m_registers[BP] + m_registers[SI]; offsetreg = SS;  APPEND_DBG("BP + SI"); break;
-			case 3: reg = (int32_t)m_registers[BP] + m_registers[DI]; offsetreg = SS;  APPEND_DBG("BP + DI"); break;
-			case 4: reg = (int32_t)m_registers[SI]; APPEND_DBG("SI"); break;
-			case 5: reg = (int32_t)m_registers[DI]; APPEND_DBG("DI"); break;
-			case 6: if ((MODREGRM & MOD) != 0) { reg = m_registers[BP]; offsetreg = SS; APPEND_DBG("BP")  } else { reg = GetIMM16(); APPEND_HEXN_DBG(reg, 4); } break;
-			case 7: reg = m_registers[BX]; APPEND_DBG("BX") break;
-		}
-		if ((MODREGRM & MOD) == 0x40)
-		{
-			int8_t disp8 = GetIMM8();
-			APPEND_DBG(" + 0x");
-			APPEND_HEX_DBG(disp8);
-			disp = disp8; // sign extension
-		}
-		else if ((MODREGRM & MOD) == 0x80)
-		{
-			int16_t disp16 = GetIMM16();
-			APPEND_DBG(" + 0x");
-			APPEND_HEX_DBG(disp16);
-			disp = disp16; // sign extension
-		}
-		APPEND_DBG("]");
-		EFFECTIVE_ADDRESS = reg + disp;
-		if (m_segmentOverride != NONE)
-		{
-			offsetreg = m_segmentOverride;
-		}
-		ADDRESS = _(m_segments[offsetreg], reg + disp);
-	}
+	inline byte GetIMM8();
 	
-	inline void StoreResult()
-	{
-		switch (ADDRESS_METHOD & DataDirectionMask)
-		{
-		case RM_IMM:
-		case RM_REG:
-			SetRM(RESULT);
-			break;
-		case REG_RM:
-			SetReg((MODREGRM & REG) >> 3, RESULT);
-			break;
-		case AXL_IMM:
-			SetReg(0, RESULT);
-			break;
-		}
-	}
+	inline word GetIMM16();
+	
+	inline byte ExtractByte();
 
-	inline byte GetIMM8()
-	{
-		return ExtractByte();
-	}
+	inline void UpdateFlags_CF();
 	
-	inline word GetIMM16()
-	{
-		word result = ExtractByte();
-		result |= ExtractByte() << 8;
-		return result;
-	}
-	
-	inline byte ExtractByte()
-	{
-		uint32_t address = m_segments[CS];
-		address = (address << 4) + IP++;
-		return m_ram[address];
-	}
+	inline void UpdateFlags_OF();
 
-	inline void UpdateFlags_CF()
-	{
-		if (Byte())
-		{
-			SetFlag<CF>((RESULT & 0x100) != 0);
-		}
-		else
-		{
-			SetFlag<CF>((RESULT & 0x10000) != 0);
-		}
-	}
+	inline void UpdateFlags_AF();
 	
-	inline void UpdateFlags_OF()
-	{
-		bool a_positive;
-		bool b_positive;
-		bool r_positive;
-		if (Byte())
-		{
-			a_positive = (OPERAND_A & 0x80) == 0;
-			b_positive = (OPERAND_B & 0x80) == 0;
-			r_positive = (RESULT & 0x80) == 0;
-		}
-		else
-		{
-			a_positive = (OPERAND_A & 0x8000) == 0;
-			b_positive = (OPERAND_B & 0x8000) == 0;
-			r_positive = (RESULT & 0x8000) == 0;
-		}
-		SetFlag<OF>(
-			(!a_positive && !b_positive && r_positive)
-			|| (a_positive && b_positive && !r_positive)
-			);
-	}
+	inline void UpdateFlags_PF();
 
-	inline void UpdateFlags_AF()
-	{
-		byte a = (OPERAND_A & 0xf);
-		byte b = (OPERAND_B & 0xf);
-		a += b;
-		SetFlag<AF>((a & 0x10) != 0);
-	}
+	inline void UpdateFlags_ZF();
 	
-	inline void UpdateFlags_PF()
-	{
-		//byte b = RESULT;
-		//b ^= b >> 4;
-		//b ^= b >> 2;
-		//b ^= b >> 1;
-		SetFlag<PF>(parity[RESULT & 0xFF]);
-	}
+	inline void UpdateFlags_SF();
 
-	inline void UpdateFlags_ZF()
-	{
-		if (Byte())
-		{
-			SetFlag<ZF>((RESULT & 0xFF) == 0);
-		}
-		else
-		{
-			SetFlag<ZF>((RESULT & 0xFFFF) == 0);
-		}
-	}
-	
-	inline void UpdateFlags_SF()
-	{
-		if (Byte())
-		{
-			SetFlag<SF>((RESULT & 0x80) != 0);
-		}
-		else
-		{
-			SetFlag<SF>((RESULT & 0x8000) != 0);
-		}
-	}
-	inline void UpdateFlags_CFOFAF()
-	{
-		UpdateFlags_CF();
-		UpdateFlags_OF();
-		UpdateFlags_AF();
-	}
-	inline void UpdateFlags_SFZFPF()
-	{
-		UpdateFlags_SF();
-		UpdateFlags_ZF();
-		UpdateFlags_PF();
-	}
-	inline void ClearFlags_CFOF()
-	{
-		ClearFlag<CF>();
-		ClearFlag<OF>();
-	}
-	inline void UpdateFlags_OFSFZFAFPF()
-	{
-		UpdateFlags_OF();
-		UpdateFlags_SF();
-		UpdateFlags_ZF();
-		UpdateFlags_AF();
-		UpdateFlags_PF();
-	}
-	inline void Push(word x)
-	{
-		m_registers[SP] -= 2;
-		uint32_t address = _(m_segments[SS], m_registers[SP]);
-		MemoryWord(address) = x;
-	}
-	inline word Pop()
-	{
-		uint32_t address = _(m_segments[SS], m_registers[SP]);
-		word x = MemoryWord(address);
-		m_registers[SP] += 2;
-		return x;
-	}
+	inline void UpdateFlags_CFOFAF();
+
+	inline void UpdateFlags_SFZFPF();
+
+	inline void ClearFlags_CFOF();
+
+	inline void UpdateFlags_OFSFZFAFPF();
+
+	inline void Push(word x);
+
+	inline word Pop();
 
 	const char* const m_segNames[4] = { "ES", "CS", "SS", "DS" };
 	const char* const m_regNames[2 * 8] = { "AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH", "AX","CX", "DX", "BX", "SP", "BP", "SI", "DI" };
@@ -589,11 +266,7 @@ private:
 	uint32_t RESULT;
 
 	Segments m_segmentOverride;
-
-	bool LOCK;
-	bool REPN;
-	bool REP;
-
+	
 	InterruptHandler* m_interruptHandler;
 
 	char dbg_cmd_address[128];
@@ -603,4 +276,8 @@ private:
 
 	ImGuiTextBuffer m_log;
 	bool m_scrollToBottom;
+
+	int A20;
+
+	static const uint8_t parity[0x100];
 };

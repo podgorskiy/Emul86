@@ -52,6 +52,9 @@ enum
 	CURSOR_ENDING = 0x0060,
 	CURSOR_STARTING = 0x0061,
 	ACTIVE_DISPLAY_PAGE = 0x0062,
+	DISKETTE_CONTROLLER_PARAMETER_TABLE = 0xefc7,
+	BIOS_CONFIG_TABLE = 0xe6f5,
+	SYS_MODEL_ID = 0xFC
 };
 
 inline uint32_t AbsAddress(uint16_t offset, uint16_t location)
@@ -147,7 +150,7 @@ void Application::Update()
 	ImGui::Checkbox("Run", &run);
 	if (run)
 	{
-		doStep = 1000;
+		doStep = 100000;
 	}
 	ImGui::End();
 
@@ -158,8 +161,16 @@ void Application::Update()
 
 	if (doStep)
 	{
+		auto start = std::chrono::steady_clock::now();
+
 		for (int i = 0; i < doStep && !m_int16_0; ++i)
 		{
+			auto current_timestamp = std::chrono::steady_clock::now();
+			std::chrono::duration<float> elapsed_time = (current_timestamp - start);
+			if (elapsed_time.count() > 0.016)
+			{
+				break;
+			}
 			m_cpu.Step();
 			if (m_cpu.IP == stopAt)
 			{
@@ -169,7 +180,9 @@ void Application::Update()
 		}
 	}
 
+#ifdef _DEBUG
 	m_cpu.GUI();
+#endif
 
 	ImGui::Begin("Disk");
 	if (ImGui::Button("Mount Dos6.22"))
@@ -192,13 +205,27 @@ void Application::Update()
 	{
 		m_disk.Open("Dos3.3.img");
 	}
+	if (ImGui::Button("Mount Dos4.01.img"))
+	{
+		m_disk.Open("Dos4.01.img");
+	}
+	if (ImGui::Button("Mount Dos5.0.img"))
+	{
+		m_disk.Open("Dos5.0.img");
+	}
+	
 	
 	static int loadAddress = 0x7C00;
 	ImGui::PushItemWidth(150);
 	ImGui::InputInt("Boot address", &loadAddress, 0, 0, ImGuiInputTextFlags_::ImGuiInputTextFlags_CharsHexadecimal);
 	if (ImGui::Button("Boot"))
 	{
+		memset(m_ram, 0, 0x100000);
+		memset(m_port, 0, 0x10000);
+		SetBIOSVars();
+		m_int16_0 = false;
 		m_disk.Read((char*)m_ram + (uint32_t)loadAddress, 0, 0x200);
+		m_cpu.Reset();
 		m_cpu.IP = loadAddress;
 		m_cpu.SetSegment(CPU::CS, 0);
 	}
@@ -222,7 +249,7 @@ void Application::DrawScreen()
 	static SimpleText st;
 
 	st.Begin();
-	int screenWidth = GetW(0x40, 0x004a);
+	int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 	int screenHeight = 25;
 	int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
 
@@ -265,6 +292,18 @@ void Application::StoreW(uint16_t offset, uint16_t location, uint16_t x)
 	m_ram[address + 1] = (x & 0xFF00) >> 8;
 }
 
+void Application::StoreString(uint16_t offset, uint16_t location, const char* x)
+{
+	uint32_t address = AbsAddress(offset, location);
+	strcpy((char*)m_ram + address, x);
+}
+
+void Application::Store(uint16_t offset, uint16_t location, uint8_t* x, int size)
+{
+	uint32_t address = AbsAddress(offset, location);
+	memcpy((char*)m_ram + address, x, size);
+}
+
 uint8_t Application::GetB(uint16_t offset, uint16_t location)
 {
 	return m_ram[AbsAddress(offset, location)];
@@ -278,20 +317,33 @@ uint16_t Application::GetW(uint16_t offset, uint16_t location)
 
 void Application::SetBIOSVars()
 {
+	// zero out BIOS data area(40:00 .. 40:ff)
+	memset(m_ram + 0x400, 0, 0x100);
+
+	// set all interrupts to default handler
+	for (int i = 0; i < 256; ++i)
+	{
+		StoreW(0x0, 4 * i + 0, 0xff53);
+		StoreW(0x0, 4 * i + 2, 0xf000);
+	}
+
+	StoreW(0x40, 0x0013, MEMORY_SIZE_KB); //Total memory in K-bytes
+
 	StoreW(0x40, 0x0000, 0x03F8); // COM1
 	StoreW(0x40, 0x0002, 0x02F8); // COM2
 	StoreW(0x40, 0x0004, 0x03E8); // COM3
 	StoreW(0x40, 0x0006, 0x02E8); // COM4
 
-	StoreW(0x40, 0x0013, MEMORY_SIZE_KB); //Total memory in K-bytes
 	StoreB(0x40, VIDEO_MOD, 0x02); // Current active video mode
 
 	StoreW(0x40, NUMBER_OF_SCREEN_COLUMNS, 80); // Screen width in text columns
+	
+	StoreB(0xF000, 0xff53, 0xCF); // dummy IRET
 
-	StoreW(0x0, 0x78, 0xefde); // pointer to diskette_param_table
-	StoreW(0x0, 0xBC, 0xff53); // pointer to diskette_param_table
-	StoreW(0x0, 0x413, 0x027f); // pointer to diskette_param_table
-
+	StoreString(0xF000, 0xff00, "(c) 2018 Emul86 BIOS");
+	StoreString(0xF000, 0xfff5, "02/03/18");
+	StoreW(0xF000, 0xfffe, SYS_MODEL_ID);
+	
 	uint8_t diskette_param_table[] = 
 	{
 		0xAF,
@@ -309,22 +361,83 @@ void Application::SetBIOSVars()
 		   0, // data transfer rate
 		   4  // drive type in cmos
 	};
+	Store(0xf000, DISKETTE_CONTROLLER_PARAMETER_TABLE, diskette_param_table, sizeof(diskette_param_table));
+
+	uint8_t bios_config[] =
+	{
+		0x08, //Table size (bytes) -Lo
+		0x00, //Table size (bytes) -Hi
+		SYS_MODEL_ID,
+		0x0, // SYS_SUBMODEL_ID
+		0x1, // Revision
+		64 + 32,
+		64,
+		0,
+		0,
+		0
+	};
+	Store(0xf000, BIOS_CONFIG_TABLE, bios_config, sizeof(bios_config));
+
+	/*
+	on return:
+	AX contains the following bit flags:
+
+	|F|E|D|C|B|A|9|8|7|6|5|4|3|2|1|0|  AX
+	| | | | | | | | | | | | | | | `---- IPL diskette installed
+	| | | | | | | | | | | | | | `----- math coprocessor
+	| | | | | | | | | | | | `-------- old PC system board RAM < 256K
+	| | | | | | | | | | | | | `----- pointing device installed (PS/2)
+	| | | | | | | | | | | | `------ not used on PS/2
+	| | | | | | | | | | `--------- initial video mode
+	| | | | | | | | `------------ # of diskette drives, less 1
+	| | | | | | | `------------- 0 if DMA installed
+	| | | | `------------------ number of serial ports
+	| | | `------------------- game adapter installed
+	| | `-------------------- unused, internal modem (PS/2)
+	`----------------------- number of printer ports
 
 
-	m_ram[0xfe6f5 + 0x00] = 0x08;
-	m_ram[0xfe6f5 + 0x01] = 0x00;
-	m_ram[0xfe6f5 + 0x02] = 0xFC;
-	m_ram[0xfe6f5 + 0x03] = 0x00;
-	m_ram[0xfe6f5 + 0x04] = 0x01;
-	m_ram[0xfe6f5 + 0x05] = 64 + 32;
-	m_ram[0xfe6f5 + 0x06] = 64;
-	m_ram[0xfe6f5 + 0x07] = 0;
-	m_ram[0xfe6f5 + 0x08] = 0;
-	m_ram[0xfe6f5 + 0x09] = 0;
+	- bits 3 & 2,  system board RAM if less than 256K motherboard
+	00 - 16K		     01 - 32K
+	10 - 16K		     11 - 64K (normal)
 
-	memcpy(m_ram + 0xefde, diskette_param_table, sizeof(diskette_param_table));
+	- bits 5 & 4,  initial video mode
+	00 - unused 	     01 - 40x25 color
+	10 - 80x25 color	     11 - 80x25 monochrome
 
-	int screenWidth = GetW(0x40, 0x004a);
+
+	- bits 7 & 6,  number of disk drives attached, when bit 0=1
+	00 - 1 drive	     01 - 2 drives
+	10 - 3 drive	     11 - 4 drives
+
+
+	- returns data stored at BIOS Data Area location 40:10
+	- some flags are not guaranteed to be correct on all machines
+	- bit 13 is used on the PCjr to indicate serial printer
+
+	*/
+	uint16_t equpment = 0
+		| 1
+		| 0 << 1
+		| 1 << 2
+		| 1 << 3
+		| 0 << 4
+		| 1 << 5
+		| 0 << 6
+		| 0 << 7
+		| 0 << 8
+		| 0 << 9
+		| 0 << 10
+		| 0 << 11
+		| 0 << 12
+		| 0 << 13
+		| 0 << 14
+		| 0 << 15
+		;
+	//equpment = 1 + 2 * 0 + 4 * 1 + 8 * 0 + 16 * 0 + 32 * 0 + 64 * 0 + 128 * 0 + 256 * 0 + 512 * 1;
+	StoreW(0x40, 0x0010, equpment);
+
+	int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 	int screenHeight = 25;
 
 	for (int page = 0; page < 8; ++page)
@@ -347,6 +460,7 @@ void Application::SetBIOSVars()
 #define SET_CH(b) m_cpu.SetRegB(CPU::CH, b)
 #define SET_CL(b) m_cpu.SetRegB(CPU::CL, b)
 #define SET_CX(b) m_cpu.SetRegW(CPU::CX, b)
+#define SET_BX(b) m_cpu.SetRegW(CPU::BX, b)
 #define SET_DX(b) m_cpu.SetRegW(CPU::DX, b)
 #define SET_AX(b) m_cpu.SetRegW(CPU::AX, b)
 #define GET_AH() m_cpu.GetRegB(CPU::AH)
@@ -375,6 +489,8 @@ void Application::Int(CPU::byte x)
 	CPU::byte function;
 	CPU::byte arg;
 	CPU::byte status;
+
+
 	switch (x)
 	{
 	// Video Services
@@ -433,7 +549,7 @@ void Application::Int(CPU::byte x)
 				int y2 = GET_DH();
 				int x2 = GET_DL();
 				int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
-				int screenWidth = GetW(0x40, 0x004a);
+				int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 				int screenHeight = 25;
 				uint32_t p = 0xB800 << 4;
 
@@ -470,7 +586,7 @@ void Application::Int(CPU::byte x)
 				int attribute = 7;
 				int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
 				int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
-				int screenWidth = GetW(0x40, 0x004a);
+				int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 				int screenHeight = 25;
 
 				if (row >= screenHeight)
@@ -534,7 +650,7 @@ void Application::Int(CPU::byte x)
 			int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
 			int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
 			int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
-			int screenWidth = GetW(0x40, 0x004a);
+			int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 			int screenHeight = 25;
 
 			if (row >= screenHeight)
@@ -570,7 +686,7 @@ void Application::Int(CPU::byte x)
 			char page = GET_BH();
 			int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
 			int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
-			int screenWidth = GetW(0x40, 0x004a);
+			int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 			int screenHeight = 25;
 			uint16_t result = GetW(0xB800, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page);
 			SET_AX(result);
@@ -586,7 +702,7 @@ void Application::Int(CPU::byte x)
 			*/
 		{
 			int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
-			int screenWidth = GetW(0x40, 0x004a);
+			int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 			int screenHeight = 25;
 			int mode = GetB(0x40, VIDEO_MOD);
 			SET_AH(screenWidth);
@@ -618,7 +734,7 @@ void Application::Int(CPU::byte x)
 				int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
 				int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
 				int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
-				int screenWidth = GetW(0x40, 0x004a);
+				int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 				int screenHeight = 25;
 				for (int i = 0; i < count; ++i)
 				{
@@ -645,7 +761,7 @@ void Application::Int(CPU::byte x)
 
 	// Conventional Memory Size
 	case 0x12:
-		m_cpu.SetRegW(CPU::AX, MEMORY_SIZE_KB);
+		SET_AX(GetW(0x40, 0x0013));
 		break;
 	
 	// disk I/O service
@@ -680,7 +796,7 @@ void Application::Int(CPU::byte x)
 				int TrackNo = m_cpu.GetRegB(CPU::CH);
 				int SectorNo = m_cpu.GetRegB(CPU::CL);
 				int SectorNum = m_cpu.GetRegB(CPU::AL);
-				int ADDR = _(m_cpu.GetSeg(CPU::ES), m_cpu.GetRegW(CPU::BX));
+				int ADDR = select(m_cpu.GetSegment(CPU::ES), m_cpu.GetRegW(CPU::BX));
 
 				int LBA = (TrackNo * m_disk.GetBiosBlock().numHeads + HeadNo) * m_disk.GetBiosBlock().secPerTrk + SectorNo - 1;
 				ASSERT(LBA <= m_disk.GetBiosBlock().totSec16, "Error int13");
@@ -753,7 +869,7 @@ void Application::Int(CPU::byte x)
 
 		default:
 			goto int13_fail;
-			FAIL("Unknown int13 function: 0x%s\n", n2hexstr(function).c_str());
+			ASSERT(false, "Unknown int13 function: 0x%s\n", n2hexstr(function).c_str());
 		}
 
 	case 0x14:
@@ -767,10 +883,11 @@ void Application::Int(CPU::byte x)
 			SET_AX(0);
 			break;
 		default:
-			FAIL("Unknown int14 function: 0x%s\n", n2hexstr(function).c_str());
+			ASSERT(false, "Unknown int14 function: 0x%s\n", n2hexstr(function).c_str());
 		}
 		break;
 
+	// System BIOS Services
 	case 0x15:
 		function = GET_AH();
 		switch (function)
@@ -788,8 +905,85 @@ void Application::Int(CPU::byte x)
 			m_cpu.ClearFlag<CPU::CF>();
 			m_cpu.ClearFlag<CPU::CF>();
 			break;
+
+		//A20 gate
+		case 0x24:
+			function = GET_AL();
+			switch (function)
+			{
+			//DISABLE A20 GATE 
+			case 0x0:
+				/*
+				CF clear if successful
+				AH = 00h
+				CF set on error
+				AH = status
+				01h keyboard controller is in secure mode
+				86h function not supported
+				*/
+				m_cpu.DisableA20Gate();
+				SET_AH(0);
+				CLEAR_CF();
+				break;
+
+			//ENABLE A20 GATE
+			case 0x1:
+				/*
+				Return:
+				CF clear if successful
+				AH = 00h
+				CF set on error
+				AH = status
+				01h keyboard controller is in secure mode
+				86h function not supported
+				*/
+				m_cpu.EnableA20Gate();
+				SET_AH(0);
+				CLEAR_CF();
+				break;
+
+			case 0x02:
+				/*
+				Return:
+				CF clear if successful
+				AH = 00h
+				AL = current state (00h disabled, 01h enabled)
+				CX = ??? (set to 0000h-000Bh or FFFFh by AMI BIOS v1.00.03.AV0M)
+				FFFFh if keyboard controller does not become ready within C000h
+				read attempts
+				CF set on error
+				AH = status
+				01h keyboard controller is in secure mode
+				86h function not supported
+				*/
+				SET_AH(0);
+				SET_AL(m_cpu.GetA20GateStatus() ? 1 : 0);
+				CLEAR_CF();
+				break;
+			case 0x03:
+				/*
+				Return:
+				CF clear if successful
+				AH = 00h
+				BX = status of A20 gate support (see #00462)
+				CF set on error
+				AH = status
+				01h keyboard controller is in secure mode
+				86h function not supported
+				*/
+				SET_AH(0);
+				SET_BX(0);
+				CLEAR_CF();
+				break;
+
+			default:
+				ASSERT(false, "Unknown A20 function: 0x%s\n", n2hexstr(function).c_str());
+				break;
+			}
+			break;
+
 		default:
-			FAIL("Unknown int15 function: 0x%s\n", n2hexstr(function).c_str());
+			ASSERT(false, "Unknown int15 function: 0x%s\n", n2hexstr(function).c_str());
 		}
 		break;
 
@@ -838,7 +1032,7 @@ void Application::Int(CPU::byte x)
 			m_int16_0 = true;
 			break;
 		default:
-			FAIL("Unknown int16 function: 0x%s\n", n2hexstr(function).c_str());
+			ASSERT(false, "Unknown int16 function: 0x%s\n", n2hexstr(function).c_str());
 		}
 		break;
 
@@ -850,7 +1044,7 @@ void Application::Int(CPU::byte x)
 			SET_AX(0);
 			break;
 		default:
-			FAIL("Unknown int17 function: 0x%s\n", n2hexstr(function).c_str());
+			ASSERT(false, "Unknown int17 function: 0x%s\n", n2hexstr(function).c_str());
 		}
 		break;
 
@@ -870,46 +1064,9 @@ void Application::Int(CPU::byte x)
 		break;
 
 	case 0x11:
-		/*
-		on return:
-	AX contains the following bit flags:
-
-	|F|E|D|C|B|A|9|8|7|6|5|4|3|2|1|0|  AX
-	 | | | | | | | | | | | | | | | `---- IPL diskette installed
-	 | | | | | | | | | | | | | | `----- math coprocessor
-	 | | | | | | | | | | | | `-------- old PC system board RAM < 256K
-	 | | | | | | | | | | | | | `----- pointing device installed (PS/2)
-	 | | | | | | | | | | | | `------ not used on PS/2
-	 | | | | | | | | | | `--------- initial video mode
-	 | | | | | | | | `------------ # of diskette drives, less 1
-	 | | | | | | | `------------- 0 if DMA installed
-	 | | | | `------------------ number of serial ports
-	 | | | `------------------- game adapter installed
-	 | | `-------------------- unused, internal modem (PS/2)
-	 `----------------------- number of printer ports
-
-
-	- bits 3 & 2,  system board RAM if less than 256K motherboard
-	    00 - 16K		     01 - 32K
-	    10 - 16K		     11 - 64K (normal)
-
-	- bits 5 & 4,  initial video mode
-	    00 - unused 	     01 - 40x25 color
-	    10 - 80x25 color	     11 - 80x25 monochrome
-
-
-	- bits 7 & 6,  number of disk drives attached, when bit 0=1
-	    00 - 1 drive	     01 - 2 drives
-	    10 - 3 drive	     11 - 4 drives
-
-
-	- returns data stored at BIOS Data Area location 40:10
-	- some flags are not guaranteed to be correct on all machines
-	- bit 13 is used on the PCjr to indicate serial printer
-
-	*/
-		SET_AX(1 + 2 * 0 + 4 * 1 + 8 * 0 + 16 * 0 + 32 * 0 + 64 * 0 + 128 * 0 + 256 * 0 + 512 * 1);
+		SET_AL(GetB(0x0040, 0x0010));
 		break;
+
 	case 0x1a:
 		function = GET_AH();
 		switch (function)
@@ -987,15 +1144,21 @@ void Application::Int(CPU::byte x)
 
 	default:
 		//custom interrupt
-
-		m_cpu.Interrupt(x);
+		if (GetW(0x0, x * 4) != 0xff53 && GetW(0x0, x * 4 + 2) != 0xf000)
+		{
+			m_cpu.Interrupt(x);
+		}
+		else
+		{
+			ASSERT(false, "Unknown interrupt: 0x%s\n", n2hexstr(x).c_str());
+		}
 	}
 }
 
 void Application::scrollOneLine()
 {
 	int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
-	int screenWidth = GetW(0x40, 0x004a);
+	int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 	int screenHeight = 25;
 	for (int row = 0; row < screenHeight; ++row)
 	{
@@ -1020,6 +1183,7 @@ void Application::scrollOneLine()
 bool Application::KeyCallback(int c)
 {
 	m_currentKeyCode = c;
+	StoreB(0x40, 0xBA, c>>8);
 	if (m_int16_0)
 	{
 		m_cpu.SetRegW(CPU::AX, c);
@@ -1027,4 +1191,36 @@ bool Application::KeyCallback(int c)
 		return true;
 	}
 	return false;
+}
+
+void Application::PushKey(int c)
+{
+	int tail = GetW(0x40, 0x1C);
+	StoreW(0x40, tail, c);
+	tail += 2;
+	if ((0x1E + 32) <= tail)
+	{
+		tail = 0x1E;
+	}
+	StoreW(0x40, 0x1C, tail);
+}
+
+int Application::PopKey()
+{
+	int head = GetW(0x40, 0x1A);
+	int c = GetW(0x40, head);
+	head += 2;
+	if ((0x1E + 32) <= head)
+	{
+		head = 0x1E;
+	}
+	StoreW(0x40, 0x1A, head);
+	return c;
+}
+
+bool Application::HasKeyToPop()
+{
+	int head = GetW(0x40, 0x1A);
+	int tail = GetW(0x40, 0x1C);
+	return head != tail;
 }

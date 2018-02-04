@@ -17,6 +17,9 @@ public:
 	void Resize(int width, int height);
 	void SetScale(int scale);
 	bool KeyCallback(int c);
+	void PushKey(int c);
+	bool HasKeyToPop();
+	int PopKey();
 	void ClearCurrentCode()
 	{
 		m_currentKeyCode = 0;
@@ -58,8 +61,11 @@ private:
 	};
 
 	void SetBIOSVars();
+	void Store(uint16_t offset, uint16_t location, uint8_t* x, int size);
 	void StoreB(uint16_t offset, uint16_t location, uint8_t x);
 	void StoreW(uint16_t offset, uint16_t location, uint16_t x);
+	void StoreString(uint16_t offset, uint16_t location, const char* x);
+
 	uint8_t GetB(uint16_t offset, uint16_t location);
 	uint16_t GetW(uint16_t offset, uint16_t location);
 	CPU m_cpu;

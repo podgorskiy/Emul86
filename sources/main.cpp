@@ -294,20 +294,9 @@ int main(int argc, char **argv)
 			if (action == GLFW_RELEASE)
 			{
 				keyBuffer.push_back(code);
+				app->PushKey(code);
 			}
-
-			if (keyBuffer.size() > 0)
-			{
-				if (app->KeyCallback(keyBuffer.front()))
-				{
-					keyBuffer.pop_front();
-				}
-			}
-			else
-			{
-				app->ClearCurrentCode();
-			}
-
+			
 			app->SetKeyFlags(KeysDown[GLFW_KEY_RIGHT_SHIFT], KeysDown[GLFW_KEY_LEFT_SHIFT], KeysDown[GLFW_KEY_RIGHT_CONTROL] | KeysDown[GLFW_KEY_LEFT_CONTROL], KeysDown[GLFW_KEY_RIGHT_ALT] | KeysDown[GLFW_KEY_LEFT_ALT]);
 
 			ImGuiIO& io = ImGui::GetIO();
@@ -360,6 +349,20 @@ int main(int argc, char **argv)
 			ImGui_ImplGlfwGL3_NewFrame();
 
 			glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+
+			if (keyBuffer.size() > 0)
+			{
+				if (app->KeyCallback(keyBuffer.front()))
+				{
+					keyBuffer.pop_front();
+					app->PopKey();
+				}
+			}
+			else
+			{
+				app->ClearCurrentCode();
+			}
 
 			app->Update();
 			app->DrawScreen();
