@@ -165,11 +165,14 @@ void Application::Update()
 
 		for (int i = 0; i < doStep && !m_int16_0; ++i)
 		{
-			auto current_timestamp = std::chrono::steady_clock::now();
-			std::chrono::duration<float> elapsed_time = (current_timestamp - start);
-			if (elapsed_time.count() > 0.016)
+			if (i % 100)
 			{
-				break;
+				auto current_timestamp = std::chrono::steady_clock::now();
+				std::chrono::duration<float> elapsed_time = (current_timestamp - start);
+				if (elapsed_time.count() > 0.03)
+				{
+					break;
+				}
 			}
 			m_cpu.Step();
 			if (m_cpu.IP == stopAt)
