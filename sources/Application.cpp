@@ -152,7 +152,6 @@ void Application::Update()
 	{
 		doStep = 100000;
 	}
-	ImGui::End();
 
 	if (m_int16_0)
 	{
@@ -165,12 +164,14 @@ void Application::Update()
 
 		for (int i = 0; i < doStep && !m_int16_0; ++i)
 		{
-			if (i % 100)
+			if (i % 100 == 0)
 			{
 				auto current_timestamp = std::chrono::steady_clock::now();
 				std::chrono::duration<float> elapsed_time = (current_timestamp - start);
-				if (elapsed_time.count() > 0.03)
+				float seconds = elapsed_time.count();
+				if (seconds > 0.03f)
 				{
+					ImGui::Text("CPS: %d", (int)(i / seconds));
 					break;
 				}
 			}
@@ -182,6 +183,7 @@ void Application::Update()
 			}
 		}
 	}
+	ImGui::End();
 
 #ifdef _DEBUG
 	m_cpu.GUI();
