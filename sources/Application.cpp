@@ -150,7 +150,7 @@ void Application::Update()
 	ImGui::Checkbox("Run", &run);
 	if (run)
 	{
-		doStep = 100000;
+		doStep = 100000000;
 	}
 
 	if (m_int16_0)
