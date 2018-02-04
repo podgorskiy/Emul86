@@ -1551,6 +1551,7 @@ opcode_:
 
 	case 0x6B:
 		ADDRESS_METHOD = r16;
+		MODREGRM = ExtractByte();
 		CMD_NAME("IMUL");
 		OPERAND_A = (int16_t)GetReg();
 		APPEND_DBG(", ");
@@ -1564,6 +1565,7 @@ opcode_:
 
 	case 0x69:
 		ADDRESS_METHOD = r16;
+		MODREGRM = ExtractByte();
 		CMD_NAME("IMUL");
 		GetReg();
 		APPEND_DBG(", ");

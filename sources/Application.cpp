@@ -164,7 +164,7 @@ void Application::Update()
 
 		for (int i = 0; i < doStep && !m_int16_0; ++i)
 		{
-			if (i % 100 == 0)
+			if (i % 500 == 0)
 			{
 				auto current_timestamp = std::chrono::steady_clock::now();
 				std::chrono::duration<float> elapsed_time = (current_timestamp - start);
