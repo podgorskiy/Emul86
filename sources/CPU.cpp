@@ -2363,7 +2363,7 @@ opcode_:
 #ifdef _DEBUG
 	if (logging_state)
 	{
-		m_log.appendf("%s %s %s\n", dbg_cmd_address, dbg_cmd_name, dbg_args);
+		m_log.appendf("%s %s %s\n\r", dbg_cmd_address, dbg_cmd_name, dbg_args);
 		printf("%s %s %s\n", dbg_cmd_address, dbg_cmd_name, dbg_args);
 		m_scrollToBottom = true;
 	}
