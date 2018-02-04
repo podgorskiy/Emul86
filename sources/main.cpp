@@ -393,10 +393,17 @@ int main(int argc, char **argv)
 
 			if (keyBuffer.size() > 0)
 			{
-				if (app->KeyCallback(keyBuffer.front()))
+				if (keyBuffer.front() != 0)
+				{
+					if (app->KeyCallback(keyBuffer.front()))
+					{
+						keyBuffer.pop_front();
+						app->PopKey();
+					}
+				}
+				else
 				{
 					keyBuffer.pop_front();
-					app->PopKey();
 				}
 			}
 			else
