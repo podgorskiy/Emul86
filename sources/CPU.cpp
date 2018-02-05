@@ -32,6 +32,9 @@ FILE* logfile;
 	} break;\
 }
 
+char state_buff[1024];
+char buff[1024];
+
 #ifdef _DEBUG
 #define UNKNOWN_OPCODE(X) \
 			ASSERT(false, "Unknown opcode: 0x%s\n", n2hexstr(X).c_str());
@@ -498,6 +501,8 @@ void CPU::Reset()
 	memset(m_registers, 0, sizeof(word) * 8);
 	memset(m_segments, 0, sizeof(word) * 4);
 	m_registers[SP] = 0xFFD6;
+	m_registers[AX] = 0xAA55;
+	m_registers[DI] = 0xFFAC;
 	IP = 0;
 	m_segments[CS] = 0x10;
 	m_flags = 0;
@@ -506,6 +511,8 @@ void CPU::Reset()
 	dbg_args[0] = 0;
 	dbg_args_ptr = dbg_args;
 	DisableA20Gate();
+
+	state_buff[0] = 0;
 }
 
 void CPU::Step()
@@ -520,6 +527,19 @@ void CPU::Step()
 	bool LOCK = false;
 	bool REPN = false;
 	bool REP = false;
+
+
+#ifdef _DEBUG
+	if (logging_state)
+	{
+		char* tmp = buff;
+		tmp = n2hexstr(tmp, m_segments[CS]);
+		tmp = n2hexstr(tmp, (uint16_t)(IP));
+		fprintf(logfile, buff);
+		fprintf(logfile, state_buff);
+		fprintf(logfile, "\n");
+	}
+#endif
 
 	m_segmentOverride = NONE;
 	int times = 1;
@@ -553,9 +573,6 @@ void CPU::Step()
 opcode_:
 #ifdef _DEBUG
 	print_address(dbg_cmd_address, m_segments[CS], (uint16_t)(IP-1));
-	char buff[1024];
-	n2hexstr(buff, m_segments[CS]); fprintf(logfile, buff);
-	n2hexstr(buff, (uint16_t)(IP - 1)); fprintf(logfile, buff);
 #endif
 
 	mem_edit.HighlightMin = (((uint32_t)m_segments[CS]) << 4) + IP - 1;
@@ -2386,17 +2403,17 @@ opcode_:
 		m_log.appendf("%s %s %s\n\r", dbg_cmd_address, dbg_cmd_name, dbg_args);
 		printf("%s %s %s\n", dbg_cmd_address, dbg_cmd_name, dbg_args);
 		m_scrollToBottom = true;
-	}
 
-	for (int i = 0; i < 8; ++i)
-	{
-		n2hexstr(buff, m_registers[i]); fprintf(logfile, buff);
+		char* tmp = state_buff;
+		for (int i = 0; i < 8; ++i)
+		{
+			tmp = n2hexstr(tmp, m_registers[i]);
+		}
+		for (int i = 0; i < 4; ++i)
+		{
+			tmp = n2hexstr(tmp, m_segments[i]);
+		}
 	}
-	for (int i = 0; i < 4; ++i)
-	{
-		n2hexstr(buff, m_segments[i]); fprintf(logfile, buff);
-	}
-	fprintf(logfile, "\n");
 #endif
 }
 

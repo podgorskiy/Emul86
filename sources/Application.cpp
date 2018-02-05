@@ -53,6 +53,7 @@ enum
 	CURSOR_STARTING = 0x0061,
 	ACTIVE_DISPLAY_PAGE = 0x0062,
 	DISKETTE_CONTROLLER_PARAMETER_TABLE = 0xefc7,
+	DISKETTE_CONTROLLER_PARAMETER_TABLE2 = 0xefde,
 	BIOS_CONFIG_TABLE = 0xe6f5,
 	SYS_MODEL_ID = 0xFC
 };
@@ -134,7 +135,7 @@ void Application::Update()
 {
 	static bool run = false;
 
-	uint32_t stopAt = -1;
+	uint32_t stopAt = 0x3275;
 	if (m_cpu.IP == stopAt)
 	{
 		run = false;
@@ -320,6 +321,10 @@ uint16_t Application::GetW(uint16_t offset, uint16_t location)
 	return ((uint16_t)m_ram[address]) | (((uint16_t)m_ram[address + 1]) << 8);
 }
 
+#define SET_INT_VECTOR(I, SEG, PTR) \
+	StoreW(0x0, 4 * (I) + 0, PTR); \
+	StoreW(0x0, 4 * (I) + 2, SEG);
+
 void Application::SetBIOSVars()
 {
 	// zero out BIOS data area(40:00 .. 40:ff)
@@ -328,8 +333,7 @@ void Application::SetBIOSVars()
 	// set all interrupts to default handler
 	for (int i = 0; i < 256; ++i)
 	{
-		StoreW(0x0, 4 * i + 0, 0xff53);
-		StoreW(0x0, 4 * i + 2, 0xf000);
+		SET_INT_VECTOR(i, 0xf000, 0xff53);
 	}
 
 	StoreW(0x40, 0x0013, MEMORY_SIZE_KB); //Total memory in K-bytes
@@ -361,13 +365,33 @@ void Application::SetBIOSVars()
 		0x6C,
 		0xF6,
 		0x0F,
-		0x08,
-		  79, // maximum track
-		   0, // data transfer rate
-		   4  // drive type in cmos
+		0x08
 	};
 	Store(0xf000, DISKETTE_CONTROLLER_PARAMETER_TABLE, diskette_param_table, sizeof(diskette_param_table));
 
+	uint8_t diskette_param_table2[] =
+	{
+		0xAF,
+		0x02,// head load time 0000001, DMA used
+		0x25,
+		0x02,
+		18,
+		0x1B,
+		0xFF,
+		0x6C,
+		0xF6,
+		0x0F,
+		0x08,
+		79, // maximum track
+		0, // data transfer rate
+		4  // drive type in cmos
+	};
+	Store(0xf000, DISKETTE_CONTROLLER_PARAMETER_TABLE2, diskette_param_table2, sizeof(diskette_param_table2));
+
+	SET_INT_VECTOR(0x1E, 0xf000, DISKETTE_CONTROLLER_PARAMETER_TABLE2);
+	SET_INT_VECTOR(0x13, 0xf000, 0xe3fe);
+	SET_INT_VECTOR(0x19, 0xf000, 0xe6f2);
+	
 	uint8_t bios_config[] =
 	{
 		0x08, //Table size (bytes) -Lo
@@ -423,20 +447,20 @@ void Application::SetBIOSVars()
 	*/
 	uint16_t equpment = 0
 		| 1
-		| 0 << 1
+		| 1 << 1
 		| 1 << 2
-		| 1 << 3
+		| 0 << 3
 		| 0 << 4
 		| 1 << 5
 		| 0 << 6
 		| 0 << 7
 		| 0 << 8
-		| 0 << 9
+		| 1 << 9
 		| 0 << 10
 		| 0 << 11
 		| 0 << 12
 		| 0 << 13
-		| 0 << 14
+		| 1 << 14
 		| 0 << 15
 		;
 	//equpment = 1 + 2 * 0 + 4 * 1 + 8 * 0 + 16 * 0 + 32 * 0 + 64 * 0 + 128 * 0 + 256 * 0 + 512 * 1;
@@ -478,6 +502,7 @@ void Application::SetBIOSVars()
 #define GET_AL() m_cpu.GetRegB(CPU::AL)
 #define GET_AX() m_cpu.GetRegW(CPU::AX)
 #define GET_CX() m_cpu.GetRegW(CPU::CX)
+#define GET_DX() m_cpu.GetRegW(CPU::DX)
 #define SET_DISK_RET_STATUS(status) StoreB(0x0040, 0x0074, status)
 #define SET_CF() m_cpu.SetFlag<CPU::CF>()
 #define SET_ZF() m_cpu.SetFlag<CPU::ZF>()
@@ -775,8 +800,11 @@ void Application::Int(CPU::byte x)
 		switch (function)
 		{
 		case 0x00: /* disk controller reset */
-			goto int13_success;
+			SET_AH(0x00); // no error
+			SET_DISK_RET_STATUS(0x00);
+			CLEAR_CF(); // no error
 			break;
+
 		case 0x01: /* read disk status */
 			status = GetB(0x0040, 0x0074); 
 			SET_AH(status);
@@ -785,9 +813,13 @@ void Application::Int(CPU::byte x)
 			if (status) SET_CF();
 			else CLEAR_CF();
 			return; 
+
 		case 0x04: // verify disk sectors
-			goto int13_success;
+			SET_AH(0x00); // no error
+			SET_DISK_RET_STATUS(0x00);
+			CLEAR_CF(); // no error
 			break;
+
 		case 0x02: // read disk sectors
 			/*
 			AL = number of sectors to read	(1-128 dec.)
@@ -808,7 +840,10 @@ void Application::Int(CPU::byte x)
 				int LBA = (TrackNo * m_disk.GetBiosBlock().numHeads + HeadNo) * m_disk.GetBiosBlock().secPerTrk + SectorNo - 1;
 				ASSERT(LBA <= m_disk.GetBiosBlock().totSec16, "Error int13");
 				m_disk.Read((char *)m_ram + ADDR, 512 * LBA, 512 * SectorNum);
-				goto int13_success;
+				SET_AH(0x00); // no error
+				SET_DISK_RET_STATUS(0x00);
+				CLEAR_CF(); // no error
+				break;
 			}
 		case 0x08:
 			/*
@@ -844,23 +879,29 @@ void Application::Int(CPU::byte x)
 			systems since the XT have this function available
 			- only the disk number is checked for validity
 			*/
-			if (GET_DL() == m_disk.GetBiosBlock().drvNum)
+
+			if (GET_DL() == 0)
 			{
 				SET_DH(m_disk.GetBiosBlock().numHeads - 1);
 				SET_CL(m_disk.GetBiosBlock().secPerTrk);
 				SET_CH((m_disk.GetBiosBlock().totSec16 / m_disk.GetBiosBlock().secPerTrk) / m_disk.GetBiosBlock().numHeads - 1);
 				SET_DL(1);
-				goto int13_success;
+				
+				SET_AH(0x00); // no error
+				SET_DISK_RET_STATUS(0x00);
+				CLEAR_CF(); // no error
 			}
 			else
 			{
-				SET_DL(1);
-				goto int13_success;
-				SET_AH(1);
+				SET_AH(0x01); // no error
+				SET_CF(); // error
 			}
 			break;
+
 		case 0x10: /* disk controller reset */
-			goto int13_success;
+			SET_AH(0x00); // no error
+			SET_DISK_RET_STATUS(0x00);
+			CLEAR_CF(); // no error
 			break;
 
 		case 0x15: /* disk controller reset */
@@ -875,16 +916,19 @@ void Application::Int(CPU::byte x)
 			break;
 
 		default:
-			goto int13_fail;
 			ASSERT(false, "Unknown int13 function: 0x%s\n", n2hexstr(function).c_str());
 		}
+		break;
 
 	case 0x14:
 		function = GET_AH();
 		switch (function)
 		{
 		case 0:
-			SET_AX(0);
+			if (GET_DX() == 0)
+			{
+				SET_AX(0x6030);
+			}
 			break;
 		case 0x01:
 			SET_AX(0);
@@ -1048,30 +1092,18 @@ void Application::Int(CPU::byte x)
 		switch (function)
 		{
 		case 0x01:
-			SET_AX(0);
+			if (GET_AL() == 0)
+			{
+				SET_AX(0x1000);
+			}
 			break;
 		default:
 			ASSERT(false, "Unknown int17 function: 0x%s\n", n2hexstr(function).c_str());
 		}
 		break;
 
-	int13_fail:
-		SET_AH(0x01); // defaults to invalid function in AH or invalid parameter
-	int13_fail_noah:
-		SET_DISK_RET_STATUS(GET_AH());
-	int13_fail_nostatus:
-		SET_CF();     // error occurred
-		return;
-
-	int13_success:
-		SET_AH(0x00); // no error
-	int13_success_noah:
-		SET_DISK_RET_STATUS(0x00);
-		CLEAR_CF(); // no error
-		break;
-
 	case 0x11:
-		SET_AL(GetB(0x0040, 0x0010));
+		SET_AX(GetW(0x0040, 0x0010));
 		break;
 
 	case 0x1a:
