@@ -55,7 +55,8 @@ enum
 	DISKETTE_CONTROLLER_PARAMETER_TABLE = 0xefc7,
 	DISKETTE_CONTROLLER_PARAMETER_TABLE2 = 0xefde,
 	BIOS_CONFIG_TABLE = 0xe6f5,
-	SYS_MODEL_ID = 0xFC
+	SYS_MODEL_ID = 0xFC,
+	UNSUPPORTED_FUNCTION = 0x86
 };
 
 inline uint32_t AbsAddress(uint16_t offset, uint16_t location)
@@ -135,7 +136,7 @@ void Application::Update()
 {
 	static bool run = false;
 
-	uint32_t stopAt = 0x3275;
+	uint32_t stopAt = -1;
 	if (m_cpu.IP == stopAt)
 	{
 		run = false;
@@ -391,6 +392,14 @@ void Application::SetBIOSVars()
 	SET_INT_VECTOR(0x1E, 0xf000, DISKETTE_CONTROLLER_PARAMETER_TABLE2);
 	SET_INT_VECTOR(0x13, 0xf000, 0xe3fe);
 	SET_INT_VECTOR(0x19, 0xf000, 0xe6f2);
+	SET_INT_VECTOR(0x08, 0xf000, 0xfea5);
+	SET_INT_VECTOR(0x09, 0xf000, 0xe987);
+	SET_INT_VECTOR(0x10, 0xf000, 0xf065);
+
+	StoreB(0xF000, 0xe3fe, 0xCF); // dummy IRET
+	StoreB(0xF000, 0xe6f2, 0xCF); // dummy IRET
+	StoreB(0xF000, 0xfea5, 0xCF); // dummy IRET
+	StoreB(0xF000, 0xe987, 0xCF); // dummy IRET
 	
 	uint8_t bios_config[] =
 	{
@@ -508,6 +517,10 @@ void Application::SetBIOSVars()
 #define SET_ZF() m_cpu.SetFlag<CPU::ZF>()
 #define CLEAR_CF() m_cpu.ClearFlag<CPU::CF>()
 #define CLEAR_ZF() m_cpu.ClearFlag<CPU::ZF>()
+
+#define SET_ES(b) m_cpu.SetSegment(CPU::ES, b)
+#define SET_DI(b) m_cpu.SetRegW(CPU::DI, b)
+
 
 inline uint8_t decToBcd(uint8_t val)
 {
@@ -886,14 +899,17 @@ void Application::Int(CPU::byte x)
 				SET_CL(m_disk.GetBiosBlock().secPerTrk);
 				SET_CH((m_disk.GetBiosBlock().totSec16 / m_disk.GetBiosBlock().secPerTrk) / m_disk.GetBiosBlock().numHeads - 1);
 				SET_DL(1);
-				
-				SET_AH(0x00); // no error
+				SET_BX(0x0004);
+				SET_ES(0xF000);
+				SET_DI(DISKETTE_CONTROLLER_PARAMETER_TABLE2);
+
+				SET_AX(0x00); // no error
 				SET_DISK_RET_STATUS(0x00);
 				CLEAR_CF(); // no error
 			}
 			else
 			{
-				SET_AH(0x01); // no error
+				SET_AH(0x01);
 				SET_CF(); // error
 			}
 			break;
@@ -950,6 +966,8 @@ void Application::Int(CPU::byte x)
 			m_cpu.SetRegB(CPU::AH, 0);
 			break;
 		case 0x41:
+			SET_CF(); // error
+			SET_AH(UNSUPPORTED_FUNCTION);
 			break;
 		case 0x88:
 			m_cpu.SetRegW(CPU::AX, 0);
@@ -1028,6 +1046,8 @@ void Application::Int(CPU::byte x)
 				break;
 
 			default:
+				SET_CF(); // error
+				SET_AH(UNSUPPORTED_FUNCTION);
 				ASSERT(false, "Unknown A20 function: 0x%s\n", n2hexstr(function).c_str());
 				break;
 			}
