@@ -45,7 +45,7 @@ inline bool gl3wIsSupported(int, int)
 */
 enum
 {
-	MEMORY_SIZE_KB = 0x0400,
+	MEMORY_SIZE_KB = 0x027F,
 	VIDEO_MOD = 0x0049,
 	NUMBER_OF_SCREEN_COLUMNS = 0x004A,
 	CURSOR_POSITION = 0x0050,
@@ -786,6 +786,8 @@ void Application::Int(CPU::byte x)
 			else CLEAR_CF();
 			return; 
 		case 0x04: // verify disk sectors
+			goto int13_success;
+			break;
 		case 0x02: // read disk sectors
 			/*
 			AL = number of sectors to read	(1-128 dec.)

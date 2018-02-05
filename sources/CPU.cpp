@@ -1400,7 +1400,6 @@ opcode_:
 		switch (OPCODE2)
 		{
 		case 0x00:
-		case 0x01:
 			CMD_NAME("TEST");
 			OPERAND_A = GetRM();
 			APPEND_DBG(", ");
@@ -1588,6 +1587,14 @@ opcode_:
 		{
 			times = GetRegB(CL) & 0x1F;
 		}
+		if (Byte())
+		{
+			times &= 0x7;
+		}
+		else
+		{
+			times &= 0x1f;
+		}
 
 		MSB_MASK = (OPCODE1 & 1 )? 0x8000 : 0x80;
 
@@ -1691,6 +1698,15 @@ opcode_:
 
 		times = GetIMM8();
 
+		if (Byte())
+		{
+			times &= 0x7;
+		}
+		else
+		{
+			times &= 0x1f;
+		}
+
 		MSB_MASK = (OPCODE1 & 1) ? 0x8000 : 0x80;
 
 		switch (OPCODE2)
@@ -1764,6 +1780,7 @@ opcode_:
 			APPEND_DBG_REG(0);
 			OPERAND_A = GetReg(0);
 			APPEND_DBG(" [ES:DI]");
+			ASSERT(m_segmentOverride == NONE, "Override not permited");
 			ADDRESS = GetSegment(ES) << 4;
 			ADDRESS += m_registers[DI];
 
@@ -1804,6 +1821,7 @@ opcode_:
 			APPEND_DBG_REG(0);
 			OPERAND_A = GetReg(0);
 			APPEND_DBG(" [ES:DI]");
+			ASSERT(m_segmentOverride == NONE, "Override not permited");
 			ADDRESS = GetSegment(ES) << 4;
 			ADDRESS += m_registers[DI];
 
