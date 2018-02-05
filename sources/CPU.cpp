@@ -538,6 +538,7 @@ void CPU::Step()
 		fprintf(logfile, buff);
 		fprintf(logfile, state_buff);
 		fprintf(logfile, "\n");
+		fflush(logfile);
 	}
 #endif
 
@@ -1853,21 +1854,27 @@ opcode_:
 				m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
 			}
 
+			OPERAND_B = -OPERAND_B;
+			RESULT = OPERAND_A + OPERAND_B;
+			UpdateFlags_CFOFAF();
+			UpdateFlags_SFZFPF();
+
 			if (i != times - 1)
 			{
 #ifdef _DEBUG
 				*(dbg_args_ptr = dbg_args) = 0;
 #endif
 			}
+
 			if (REP || REPN)
 			{
 				m_registers[CX]--;
 			}
-			if (REP && (OPERAND_B != OPERAND_A))
+			if (REP && !TestFlag<ZF>())
 			{
 				break;
 			}
-			if (REPN && (OPERAND_B == OPERAND_A))
+			if (REPN && TestFlag<ZF>())
 			{
 				break;
 			}
