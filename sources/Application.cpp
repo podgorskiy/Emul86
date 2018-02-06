@@ -55,8 +55,12 @@ enum
 	DISKETTE_CONTROLLER_PARAMETER_TABLE = 0xefc7,
 	DISKETTE_CONTROLLER_PARAMETER_TABLE2 = 0xefde,
 	BIOS_CONFIG_TABLE = 0xe6f5,
+	CGA_DISPLAY_RAM = 0xB800,
+	BIOS_SEGMENT = 0xF000,
 	SYS_MODEL_ID = 0xFC,
-	UNSUPPORTED_FUNCTION = 0x86
+	UNSUPPORTED_FUNCTION = 0x86,
+	BIOSMEM_NB_ROWS = 0x84,
+	BIOSMEM_CHAR_HEIGHT = 0x85
 };
 
 inline uint32_t AbsAddress(uint16_t offset, uint16_t location)
@@ -136,8 +140,8 @@ void Application::Update()
 {
 	static bool run = false;
 
-	uint32_t stopAt = -1;
-	if (m_cpu.IP == stopAt)
+	uint32_t stopAt = -1;// select(0x3636, 0x813D);
+	if (select(m_cpu.GetSegment(CPU::CS), m_cpu.IP) == stopAt)
 	{
 		run = false;
 	}
@@ -178,7 +182,7 @@ void Application::Update()
 				}
 			}
 			m_cpu.Step();
-			if (m_cpu.IP == stopAt)
+			if (select(m_cpu.GetSegment(CPU::CS), m_cpu.IP) == stopAt)
 			{
 				run = false;
 				break;
@@ -260,7 +264,7 @@ void Application::DrawScreen()
 	int screenHeight = 25;
 	int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
 
-	uint32_t p = 0xB800 << 4;
+	uint32_t p = CGA_DISPLAY_RAM << 4;
 	for (int row = 0; row < screenHeight; ++row)
 	{
 		for (int clm = 0; clm < screenWidth; ++clm)
@@ -334,7 +338,7 @@ void Application::SetBIOSVars()
 	// set all interrupts to default handler
 	for (int i = 0; i < 256; ++i)
 	{
-		SET_INT_VECTOR(i, 0xf000, 0xff53);
+		SET_INT_VECTOR(i, BIOS_SEGMENT, 0xff53);
 	}
 
 	StoreW(0x40, 0x0013, MEMORY_SIZE_KB); //Total memory in K-bytes
@@ -347,12 +351,15 @@ void Application::SetBIOSVars()
 	StoreB(0x40, VIDEO_MOD, 0x02); // Current active video mode
 
 	StoreW(0x40, NUMBER_OF_SCREEN_COLUMNS, 80); // Screen width in text columns
+	StoreB(0x40, BIOSMEM_CHAR_HEIGHT, 10);
+	StoreB(0x40, BIOSMEM_NB_ROWS, 24);
 	
-	StoreB(0xF000, 0xff53, 0xCF); // dummy IRET
 
-	StoreString(0xF000, 0xff00, "(c) 2018 Emul86 BIOS");
-	StoreString(0xF000, 0xfff5, "02/03/18");
-	StoreW(0xF000, 0xfffe, SYS_MODEL_ID);
+	StoreB(BIOS_SEGMENT, 0xff53, 0xCF); // dummy IRET
+
+	StoreString(BIOS_SEGMENT, 0xff00, "(c) 2018 Emul86 BIOS");
+	StoreString(BIOS_SEGMENT, 0xfff5, "02/03/18");
+	StoreW(BIOS_SEGMENT, 0xfffe, SYS_MODEL_ID);
 	
 	uint8_t diskette_param_table[] = 
 	{
@@ -368,7 +375,7 @@ void Application::SetBIOSVars()
 		0x0F,
 		0x08
 	};
-	Store(0xf000, DISKETTE_CONTROLLER_PARAMETER_TABLE, diskette_param_table, sizeof(diskette_param_table));
+	Store(BIOS_SEGMENT, DISKETTE_CONTROLLER_PARAMETER_TABLE, diskette_param_table, sizeof(diskette_param_table));
 
 	uint8_t diskette_param_table2[] =
 	{
@@ -387,19 +394,19 @@ void Application::SetBIOSVars()
 		0, // data transfer rate
 		4  // drive type in cmos
 	};
-	Store(0xf000, DISKETTE_CONTROLLER_PARAMETER_TABLE2, diskette_param_table2, sizeof(diskette_param_table2));
+	Store(BIOS_SEGMENT, DISKETTE_CONTROLLER_PARAMETER_TABLE2, diskette_param_table2, sizeof(diskette_param_table2));
 
-	SET_INT_VECTOR(0x1E, 0xf000, DISKETTE_CONTROLLER_PARAMETER_TABLE2);
-	SET_INT_VECTOR(0x13, 0xf000, 0xe3fe);
-	SET_INT_VECTOR(0x19, 0xf000, 0xe6f2);
-	SET_INT_VECTOR(0x08, 0xf000, 0xfea5);
-	SET_INT_VECTOR(0x09, 0xf000, 0xe987);
-	SET_INT_VECTOR(0x10, 0xf000, 0xf065);
+	SET_INT_VECTOR(0x1E, BIOS_SEGMENT, DISKETTE_CONTROLLER_PARAMETER_TABLE2);
+	SET_INT_VECTOR(0x13, BIOS_SEGMENT, 0xe3fe);
+	SET_INT_VECTOR(0x19, BIOS_SEGMENT, 0xe6f2);
+	SET_INT_VECTOR(0x08, BIOS_SEGMENT, 0xfea5);
+	SET_INT_VECTOR(0x09, BIOS_SEGMENT, 0xe987);
+	SET_INT_VECTOR(0x10, BIOS_SEGMENT, 0xf065);
 
-	StoreB(0xF000, 0xe3fe, 0xCF); // dummy IRET
-	StoreB(0xF000, 0xe6f2, 0xCF); // dummy IRET
-	StoreB(0xF000, 0xfea5, 0xCF); // dummy IRET
-	StoreB(0xF000, 0xe987, 0xCF); // dummy IRET
+	StoreB(BIOS_SEGMENT, 0xe3fe, 0xCF); // dummy IRET
+	StoreB(BIOS_SEGMENT, 0xe6f2, 0xCF); // dummy IRET
+	StoreB(BIOS_SEGMENT, 0xfea5, 0xCF); // dummy IRET
+	StoreB(BIOS_SEGMENT, 0xe987, 0xCF); // dummy IRET
 	
 	uint8_t bios_config[] =
 	{
@@ -414,7 +421,7 @@ void Application::SetBIOSVars()
 		0,
 		0
 	};
-	Store(0xf000, BIOS_CONFIG_TABLE, bios_config, sizeof(bios_config));
+	Store(BIOS_SEGMENT, BIOS_CONFIG_TABLE, bios_config, sizeof(bios_config));
 
 	/*
 	on return:
@@ -456,7 +463,7 @@ void Application::SetBIOSVars()
 	*/
 	uint16_t equpment = 0
 		| 1
-		| 1 << 1
+		| 0 << 1
 		| 1 << 2
 		| 0 << 3
 		| 0 << 4
@@ -494,6 +501,7 @@ void Application::SetBIOSVars()
 #define SET_AL(b) m_cpu.SetRegB(CPU::AL, b)
 #define SET_DH(b) m_cpu.SetRegB(CPU::DH, b)
 #define SET_BH(b) m_cpu.SetRegB(CPU::BH, b)
+#define SET_BL(b) m_cpu.SetRegB(CPU::BL, b)
 #define SET_DL(b) m_cpu.SetRegB(CPU::DL, b)
 #define SET_CH(b) m_cpu.SetRegB(CPU::CH, b)
 #define SET_CL(b) m_cpu.SetRegB(CPU::CL, b)
@@ -512,13 +520,14 @@ void Application::SetBIOSVars()
 #define GET_AX() m_cpu.GetRegW(CPU::AX)
 #define GET_CX() m_cpu.GetRegW(CPU::CX)
 #define GET_DX() m_cpu.GetRegW(CPU::DX)
-#define SET_DISK_RET_STATUS(status) StoreB(0x0040, 0x0074, status)
 #define SET_CF() m_cpu.SetFlag<CPU::CF>()
 #define SET_ZF() m_cpu.SetFlag<CPU::ZF>()
 #define CLEAR_CF() m_cpu.ClearFlag<CPU::CF>()
 #define CLEAR_ZF() m_cpu.ClearFlag<CPU::ZF>()
+#define SET_DISK_RET_STATUS(status) StoreB(0x0040, 0x0074, status)
 
 #define SET_ES(b) m_cpu.SetSegment(CPU::ES, b)
+#define SET_BP(b) m_cpu.SetRegW(CPU::BP, b)
 #define SET_DI(b) m_cpu.SetRegW(CPU::DI, b)
 
 
@@ -533,7 +542,6 @@ void Application::Int(CPU::byte x)
 	CPU::byte arg;
 	CPU::byte status;
 
-
 	switch (x)
 	{
 	// Video Services
@@ -547,10 +555,20 @@ void Application::Int(CPU::byte x)
 			StoreB(0x40, VIDEO_MOD, arg);
 			printf("Video mode: %d\n", arg);
 			break;
+
+		// Set cursor type
 		case 0x01:
-			//Set cursor type
 			break;
+
+		// Set cursor position
 		case 0x02:
+			/*
+			AH = 02
+			BH = page number (0 for graphics modes)
+			DH = row
+			DL = column
+			returns nothing
+			*/
 			{
 				int page = GET_BH();
 				int row = GET_DH();
@@ -559,6 +577,8 @@ void Application::Int(CPU::byte x)
 				StoreB(0x40, CURSOR_POSITION + 2 * page + 1, column);
 			}
 			break;
+
+		// Read cursor position
 		case 0x03:
 			/*
 			on return:
@@ -575,14 +595,17 @@ void Application::Int(CPU::byte x)
 				SET_DL(column);
 				SET_CH(0);
 				SET_CL(5);
-				break;
 			}
+			break;
+
+		// Select active display page
 		case 0x05:
-			// Select active display page
 			{
 				StoreB(0x40, ACTIVE_DISPLAY_PAGE, arg);
 			}
 			break;
+
+		// Scroll active page up
 		case 0x06:
 			{
 				int n = GET_AL();
@@ -602,21 +625,22 @@ void Application::Int(CPU::byte x)
 					{
 						for (int col = x1; col <= x2; ++col)
 						{
-							int tmp = GetW(0xB800, (row + n) * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page);
-							StoreW(0xB800, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, tmp);
+							int tmp = GetW(CGA_DISPLAY_RAM, (row + n) * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page);
+							StoreW(CGA_DISPLAY_RAM, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, tmp);
 						}
 					}
 					else
 					{
 						for (int col = x1; col <= x2; ++col)
 						{
-							StoreW(0xB800, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, a << 8);
+							StoreW(CGA_DISPLAY_RAM, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, a << 8);
 						}
 					}
 				}
 			}
 			break;
 
+		// Write text in teletype mode
 		case 0x0E:
 			/*
 			AL = ASCII character to write
@@ -677,6 +701,7 @@ void Application::Int(CPU::byte x)
 
 			break;
 
+		// Write character and attribute at cursor
 		case 0x09:
 			/*
 			AH = 09
@@ -685,36 +710,37 @@ void Application::Int(CPU::byte x)
 			BL = character attribute (text) foreground color (graphics)
 			CX = count of characters to write (CX >= 1)
 			*/
-		{
-			char symbol = GET_AL();
-			char page = GET_BH();
-			int attribute = GET_BL();
-			int count = GET_CX();
-			int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
-			int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
-			int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
-			int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
-			int screenHeight = 25;
-
-			if (row >= screenHeight)
 			{
-				scrollOneLine();
-				row = screenHeight - 1;
-			}
+				char symbol = GET_AL();
+				char page = GET_BH();
+				int attribute = GET_BL();
+				int count = GET_CX();
+				int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
+				int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
+				int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
+				int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
+				int screenHeight = 25;
 
-			for (int i = 0; i < count; ++i)
-			{
-				StoreW(0xB800, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page, symbol + (attribute << 8));
-				++column;
-				if (column >= screenWidth)
+				if (row >= screenHeight)
 				{
-					column = 0;
-					row++;
+					scrollOneLine();
+					row = screenHeight - 1;
+				}
+
+				for (int i = 0; i < count; ++i)
+				{
+					StoreW(CGA_DISPLAY_RAM, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page, symbol + (attribute << 8));
+					++column;
+					if (column >= screenWidth)
+					{
+						column = 0;
+						row++;
+					}
 				}
 			}
-		}
-		break;
+			break;
 
+		// Read character and attribute at cursor
 		case 0x08:
 			/*
 			AH = 08
@@ -725,35 +751,37 @@ void Application::Int(CPU::byte x)
 			- in video mode 4 (300x200 4 color) on the EGA, MCGA and VGA
 			this function works only on page zero
 			*/
-		{
-			char page = GET_BH();
-			int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
-			int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
-			int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
-			int screenHeight = 25;
-			uint16_t result = GetW(0xB800, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page);
-			SET_AX(result);
-		}
-		break;
-
-		case 0x0F:
-			/*
-				on return:
-				AH = number of screen columns
-				AL = mode currently set (see VIDEO MODES)
-				BH = current display page
-			*/
-		{
-			int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
-			int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
-			int screenHeight = 25;
-			int mode = GetB(0x40, VIDEO_MOD);
-			SET_AH(screenWidth);
-			SET_AL(mode);
-			SET_BH(active_page);
-		}
+			{
+				char page = GET_BH();
+				int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
+				int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
+				int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
+				int screenHeight = 25;
+				uint16_t result = GetW(CGA_DISPLAY_RAM, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page);
+				SET_AX(result);
+			}
 			break;
 
+		// Get current video state
+		case 0x0F:
+			/*
+			on return:
+			AH = number of screen columns
+			AL = mode currently set (see VIDEO MODES)
+			BH = current display page
+			*/
+			{
+				int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
+				int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
+				int screenHeight = 25;
+				int mode = GetB(0x40, VIDEO_MOD);
+				SET_AH(screenWidth);
+				SET_AL(mode);
+				SET_BH(active_page);
+			}
+			break;
+
+		// Set/get palette registers (EGA/VGA)
 		case 0x10:
 			switch (function)
 			{
@@ -762,13 +790,14 @@ void Application::Int(CPU::byte x)
 			}
 			break;
 
+		// Write character at current cursor
 		case 0x0A:
 			/*
-	AH = 0A
-	AL = ASCII character to write
-	BH = display page  (or mode 13h, background pixel value)
-	BL = foreground color (graphics mode only)
-	CX = count of characters to write (CX >= 1)*/
+			AH = 0A
+			AL = ASCII character to write
+			BH = display page  (or mode 13h, background pixel value)
+			BL = foreground color (graphics mode only)
+			CX = count of characters to write (CX >= 1)*/
 			{
 				char symbol = GET_AL();
 				char page = GET_BH();
@@ -781,7 +810,7 @@ void Application::Int(CPU::byte x)
 				int screenHeight = 25;
 				for (int i = 0; i < count; ++i)
 				{
-					StoreW(0xB800, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page, symbol + (7 << 8));
+					StoreW(CGA_DISPLAY_RAM, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page, symbol + (7 << 8));
 					++column;
 					if (column > screenWidth)
 					{
@@ -795,6 +824,108 @@ void Application::Int(CPU::byte x)
 				}
 			}
 			break;
+
+		//Video Subsystem Configuration
+		case 0x12:
+		{
+			arg = GET_BL();
+			switch (arg)
+			{
+				//return video configuration information
+				/*on return:
+				BH = 0 if color mode in effect
+				= 1 if mono mode in effect
+				BL = 0 if 64k EGA memory
+				= 1 if 128k EGA memory
+				= 2 if 192k EGA memory
+				= 3 if 256k EGA memory
+				CH = feature bits
+				CL = switch settings
+				*/
+			case 0x10:
+				SET_BH(0);
+				SET_BL(3);
+				SET_CX(9);
+				break;
+			default:
+				ASSERT(false, "Unknown int10 12 function: 0x%s\n", n2hexstr(arg).c_str());
+			}
+		}
+		break;
+
+		//Character Generator Functions
+		case 0x11:
+		{
+			switch (arg)
+			{
+			case 0x30:
+				/*
+				30  get current character generator information
+				BH = information desired:
+				= 0  INT 1F pointer
+				= 1  INT 44h pointer
+				= 2  ROM 8x14 pointer
+				= 3  ROM 8x8 double dot pointer (base)
+				= 4  ROM 8x8 double dot pointer (top)
+				= 5  ROM 9x14 alpha alternate pointer
+				= 6  ROM 8x16 character table pointer
+				= 7  ROM 9x16 alternate character table pointer
+				*/
+				switch (GET_BH())
+				{
+				case 0:
+					/*
+					CX = bytes per character (points)
+					DL = rows (less 1)
+					ES:BP = pointer to table
+					*/
+					//SET_ES(GetW(0x00, 0x1f * 4));
+					//SET_BP(GetW(0x00, (0x1f * 4) + 2));
+					SET_ES(0x1380); // fake pointer
+					SET_BP(0xc000);
+					// Set byte/char of on screen font
+					SET_CX(GetB(0x40, BIOSMEM_CHAR_HEIGHT));
+
+					// Set Highest char row
+					SET_DL(GetB(0x40, BIOSMEM_NB_ROWS));
+
+					break;
+				default:
+					ASSERT(false, "Unknown int10 12 function: 0x%s\n", n2hexstr(arg).c_str());
+				}
+				break;
+			default:
+				ASSERT(false, "Unknown int10 12 function: 0x%s\n", n2hexstr(arg).c_str());
+			}
+		}
+		break;
+
+		//Get DESQView/TopView Virtual Screen Regen Buffer
+		case 0xFE:
+		{
+			/*
+			returns:
+			ES:DI = address of DESQView/TopView video buffer, DI will always
+				be zero
+			*/
+			SET_ES(CGA_DISPLAY_RAM);
+			SET_DI(0);
+		}
+		break;
+
+		//Update DESQView/TopView Virtual Screen Regen Buffer
+		case 0xFF:
+		{
+			/*
+			AH = FF
+			CX = number of characters changed
+			ES:DI = pointer to first character in buffer to change,  ES is
+			set to segment returned by INT 10,FE
+			returns nothing
+			*/
+			// Do nothing
+		}
+		break;
 
 		default:
 			ASSERT(false, "Unknown int10 function: 0x%s\n", n2hexstr(function).c_str());
@@ -842,6 +973,8 @@ void Application::Int(CPU::byte x)
 			DL = drive number (0=A:, 1=2nd floppy, 80h=drive 0, 81h=drive 1)
 			ES:BX = pointer to buffer
 			*/
+			// We have only floppy disk, drive number 0.
+			if (GET_DL() == 0)
 			{
 				int DiskNo = m_cpu.GetRegB(CPU::DL);
 				int HeadNo = m_cpu.GetRegB(CPU::DH);
@@ -856,8 +989,48 @@ void Application::Int(CPU::byte x)
 				SET_AH(0x00); // no error
 				SET_DISK_RET_STATUS(0x00);
 				CLEAR_CF(); // no error
-				break;
 			}
+			else
+			{
+				SET_AH(0x01);
+				SET_CF(); // error
+			}
+			break;
+
+		// Write Disk Sectors
+		case 0x03:
+			/*
+			AH = 03
+			AL = number of sectors to write  (1-128 dec.)
+			CH = track/cylinder number  (0-1023 dec.)
+			CL = sector number  (1-17 dec., see below)
+			DH = head number  (0-15 dec.)
+			DL = drive number (0=A:, 1=2nd floppy, 80h=drive 0, 81h=drive 1)
+			ES:BX = pointer to buffer
+			*/
+			if (GET_DL() == 0)
+			{
+				int DiskNo = m_cpu.GetRegB(CPU::DL);
+				int HeadNo = m_cpu.GetRegB(CPU::DH);
+				int TrackNo = m_cpu.GetRegB(CPU::CH);
+				int SectorNo = m_cpu.GetRegB(CPU::CL);
+				int SectorNum = m_cpu.GetRegB(CPU::AL);
+				int ADDR = select(m_cpu.GetSegment(CPU::ES), m_cpu.GetRegW(CPU::BX));
+
+				int LBA = (TrackNo * m_disk.GetBiosBlock().numHeads + HeadNo) * m_disk.GetBiosBlock().secPerTrk + SectorNo - 1;
+				ASSERT(LBA <= m_disk.GetBiosBlock().totSec16, "Error int13");
+				m_disk.Write((char *)m_ram + ADDR, 512 * LBA, 512 * SectorNum);
+				SET_AH(0x00); // no error
+				SET_DISK_RET_STATUS(0x00);
+				CLEAR_CF(); // no error
+			}
+			else
+			{
+				SET_AH(0x01);
+				SET_CF(); // error
+			}
+			break;
+
 		case 0x08:
 			/*
 			AH = 08
@@ -893,6 +1066,7 @@ void Application::Int(CPU::byte x)
 			- only the disk number is checked for validity
 			*/
 
+			// We have only floppy disk, drive number 0.
 			if (GET_DL() == 0)
 			{
 				SET_DH(m_disk.GetBiosBlock().numHeads - 1);
@@ -900,7 +1074,7 @@ void Application::Int(CPU::byte x)
 				SET_CH((m_disk.GetBiosBlock().totSec16 / m_disk.GetBiosBlock().secPerTrk) / m_disk.GetBiosBlock().numHeads - 1);
 				SET_DL(1);
 				SET_BX(0x0004);
-				SET_ES(0xF000);
+				SET_ES(BIOS_SEGMENT);
 				SET_DI(DISKETTE_CONTROLLER_PARAMETER_TABLE2);
 
 				SET_AX(0x00); // no error
@@ -921,7 +1095,8 @@ void Application::Int(CPU::byte x)
 			break;
 
 		case 0x15: /* disk controller reset */
-			if (GET_DL() == m_disk.GetBiosBlock().drvNum)
+			 // We have only floppy disk, drive number 0.
+			if (GET_DL() == 0)
 			{
 				SET_AH(1);
 			}
@@ -936,16 +1111,21 @@ void Application::Int(CPU::byte x)
 		}
 		break;
 
+	//  BIOS Asynchronous Communications Services
 	case 0x14:
 		function = GET_AH();
 		switch (function)
 		{
+		//  Initialize Communications Port Parameters
 		case 0:
+			// Pretend, we have only COM0
 			if (GET_DX() == 0)
 			{
 				SET_AX(0x6030);
 			}
 			break;
+
+		// Send Character to Communications Port
 		case 0x01:
 			SET_AX(0);
 			break;
@@ -959,20 +1139,41 @@ void Application::Int(CPU::byte x)
 		function = GET_AH();
 		switch (function)
 		{
+		//Return system configuration parameters (PS/2 only)
+		/*
+		on return:
+		CF = 0 if successful
+		   = 1 if error
+		AH = when CF set, 80h for PC & PCjr, 86h for XT
+			 (BIOS after 11/8/82) and AT (BIOS after 1/10/84)
+
+		ES:BX = pointer to system descriptor table in ROM of the format:
+		*/
 		case 0xC0:
-			m_cpu.SetRegW(CPU::BX, 0xe6f5);
-			m_cpu.SetSegment(CPU::ES, 0xf000);
-			m_cpu.ClearFlag<CPU::CF>();
-			m_cpu.SetRegB(CPU::AH, 0);
+			SET_BX(BIOS_CONFIG_TABLE);
+			SET_ES(BIOS_SEGMENT);
+			CLEAR_CF();
+			SET_AH(0);
 			break;
+
+		//Wait on external event (convertible only)
 		case 0x41:
 			SET_CF(); // error
 			SET_AH(UNSUPPORTED_FUNCTION);
 			break;
+
+		// Extended memory size determination
 		case 0x88:
-			m_cpu.SetRegW(CPU::AX, 0);
-			m_cpu.ClearFlag<CPU::CF>();
-			m_cpu.ClearFlag<CPU::CF>();
+			/*
+			on return:
+			CF = 80h for PC, PCjr
+			   = 86h for XT and Model 30
+			   = other machines, set for error, clear for success
+			AX = number of contiguous 1k blocks of memory starting
+				 at address 1024k (100000h)
+			*/
+			SET_AX(0);
+			CLEAR_CF();
 			break;
 
 		//A20 gate
@@ -1062,6 +1263,10 @@ void Application::Int(CPU::byte x)
 		function = GET_AH();
 		switch (function)
 		{
+
+		// Get keystroke status  (AT,PS/2 enhanced keyboards)
+		case 0x11:
+		// Get keystroke status
 		case 0x01:
 			/*
 			on return:
@@ -1081,6 +1286,8 @@ void Application::Int(CPU::byte x)
 				SET_ZF();
 			}
 			break;
+
+		// Get shift status
 		case 0x02:
 			/*
 			on return:
@@ -1098,20 +1305,33 @@ void Application::Int(CPU::byte x)
 			*/
 			SET_AL(GetB(0x0040, 0x0017));
 			break;
+
+		// Wait for keystroke and read. halts program until key with a scancode is pressed
 		case 0x00:
+		// Wait for keystroke and read  (AT,PS/2 enhanced keyboards). 
+		// halts program until key with a scancode is pressed
 		case 0x10:
+			/*
+			on return:
+			AH = scan code
+			AL = ASCII character or zero if special function key
+			*/
 			m_int16_0 = true;
 			break;
+			
 		default:
 			ASSERT(false, "Unknown int16 function: 0x%s\n", n2hexstr(function).c_str());
 		}
 		break;
 
+	// Printer BIOS Services
 	case 0x17:
 		function = GET_AH();
 		switch (function)
 		{
+		// Initialize printer port
 		case 0x01:
+			// Lets say, we have LPT0
 			if (GET_AL() == 0)
 			{
 				SET_AX(0x1000);
@@ -1122,14 +1342,17 @@ void Application::Int(CPU::byte x)
 		}
 		break;
 
+	// BIOS Equipment Determination / BIOS Equipment Flags
 	case 0x11:
 		SET_AX(GetW(0x0040, 0x0010));
 		break;
 
+	// System and Real Time Clock BIOS Services
 	case 0x1a:
 		function = GET_AH();
 		switch (function)
 		{
+		// Read system clock counter
 		case 0x00:
 			/*
 			AL = midnight flag, 1 if 24 hours passed since reset
@@ -1148,15 +1371,16 @@ void Application::Int(CPU::byte x)
 				SET_DX(ticks & 0xFFFF);
 			}
 			break;
-		case 0x02:
-		{
-			/*
-			CF = 0 if successful  = 1 if error, RTC not operating
-			CH = hours in BCD
-			CL = minutes in BCD
-			DH = seconds in BCD
-			DL = 1 if daylight savings time option*/
+
+			// Read real time clock time (AT,PS/2)
+			case 0x02:
 			{
+				/*
+				CF = 0 if successful  = 1 if error, RTC not operating
+				CH = hours in BCD
+				CL = minutes in BCD
+				DH = seconds in BCD
+				DL = 1 if daylight savings time option*/
 				std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 				auto tm = std::localtime(&now);
 				SET_CH(decToBcd(tm->tm_hour));
@@ -1164,10 +1388,11 @@ void Application::Int(CPU::byte x)
 				SET_DH(decToBcd(tm->tm_sec));
 				SET_DL(tm->tm_isdst);
 				CLEAR_CF();
+				break;
 			}
-			break;
-		}
-		case 0x04:
+
+			// Read real time clock date (AT,PS/2)
+			case 0x04:
 			/*
 			on return:
 			CH = century in BCD (decimal 19 or 20)
@@ -1175,7 +1400,7 @@ void Application::Int(CPU::byte x)
 			DH = month in BCD
 			DL = day in BCD
 			CF = 0 if successful
-			   = 1 if error or clock not operating
+			= 1 if error or clock not operating
 			*/
 			{
 				std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -1187,23 +1412,26 @@ void Application::Int(CPU::byte x)
 				CLEAR_CF();
 				break;
 			}
-		case 0x0a:
-		{
-			/*
-			on return:
-			CX = count of days since 1-1-1980n*/
-			std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-			int days = now / 3600 / 24 - 10 * 365 - 2;
-			SET_CX(days);
-			CLEAR_CF();
-			break;
-		}
+
+			// Read system day counter (PS/2)
+			case 0x0a:
+			{
+				/*
+				on return:
+				CX = count of days since 1-1-1980n*/
+				std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+				int days = now / 3600 / 24 - 10 * 365 - 2;
+				SET_CX(days);
+				CLEAR_CF();
+				break;
+			}
 		}
 		break;
 
+	// Other interrupts
 	default:
-		//custom interrupt
-		if (GetW(0x0, x * 4) != 0xff53 && GetW(0x0, x * 4 + 2) != 0xf000)
+		// If it is not a dummy IRET, then execute it, otherwise warn about not implemented interrupt
+		if (GetW(0x0, x * 4) != 0xff53 && GetW(0x0, x * 4 + 2) != BIOS_SEGMENT)
 		{
 			m_cpu.Interrupt(x);
 		}
@@ -1225,15 +1453,15 @@ void Application::scrollOneLine()
 		{
 			for (int col = 0; col < screenWidth; ++col)
 			{
-				int tmp = GetB(0xB800, (row + 1) * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page);
-				StoreB(0xB800, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, tmp);
+				int tmp = GetB(CGA_DISPLAY_RAM, (row + 1) * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page);
+				StoreB(CGA_DISPLAY_RAM, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, tmp);
 			}
 		}
 		else
 		{
 			for (int col = 0; col < screenWidth; ++col)
 			{
-				StoreB(0xB800, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, 0);
+				StoreB(CGA_DISPLAY_RAM, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, 0);
 			}
 		}
 	}
