@@ -23,6 +23,8 @@ public:
 	void Close();
 
 	void Read(char* dst, uint32_t location, uint32_t size);
+
+	void Write(const char* dst, uint32_t location, uint32_t size);
 	
 	const BIOS_ParameterBlock& GetBiosBlock()
 	{

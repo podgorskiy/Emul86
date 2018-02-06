@@ -27,7 +27,7 @@ uint32_t Disk::ReadDW(uint32_t location)
 
 void Disk::Open(const char * path)
 {
-	m_file = fopen(path, "rb");
+	m_file = fopen(path, "rb+");
 	fseek(m_file, 0L, SEEK_END);
 	m_size = ftell(m_file);
 	fseek(m_file, 0L, SEEK_SET);
@@ -66,4 +66,10 @@ void Disk::Read(char* dst, uint32_t location, uint32_t size)
 {
 	fseek(m_file, location, SEEK_SET);
 	fread(dst, size, 1, m_file);
+}
+
+void Disk::Write(const char* dst, uint32_t location, uint32_t size)
+{
+	fseek(m_file, location, SEEK_SET);
+	fwrite(dst, size, 1, m_file);
 }
