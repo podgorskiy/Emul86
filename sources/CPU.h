@@ -221,6 +221,8 @@ private:
 	inline void UpdateFlags_OF();
 
 	inline void UpdateFlags_AF();
+
+	inline void Flip_AF();
 	
 	inline void UpdateFlags_PF();
 

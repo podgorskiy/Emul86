@@ -415,6 +415,11 @@ inline void CPU::UpdateFlags_AF()
 	SetFlag<AF>((a & 0x10) != 0);
 }
 
+inline void CPU::Flip_AF()
+{
+	SetFlag<AF>(!TestFlag<AF>());
+}
+
 inline void CPU::UpdateFlags_PF()
 {
 	//byte b = RESULT;
@@ -640,7 +645,8 @@ opcode_:
 		OPERAND_B += TestFlag<CF>() ? 1 : 0;
 		OPERAND_B = -OPERAND_B;
 		RESULT = OPERAND_A + OPERAND_B;
-		UpdateFlags_CFOFAF();
+		UpdateFlags_CFOFAF(); 
+		Flip_AF();
 		UpdateFlags_SFZFPF();
 		StoreResult();
 		break;
@@ -661,6 +667,7 @@ opcode_:
 		OPERAND_B = -OPERAND_B;
 		RESULT = OPERAND_A + OPERAND_B;
 		UpdateFlags_CFOFAF();
+		Flip_AF();
 		UpdateFlags_SFZFPF();
 		break;
 
@@ -698,6 +705,7 @@ opcode_:
 			OPERAND_B = -OPERAND_B;
 			RESULT = OPERAND_A + OPERAND_B;
 			UpdateFlags_CFOFAF();
+			Flip_AF();
 			UpdateFlags_SFZFPF();
 			StoreResult();
 			break;
@@ -713,6 +721,7 @@ opcode_:
 			OPERAND_B = -OPERAND_B;
 			RESULT = OPERAND_A + OPERAND_B;
 			UpdateFlags_CFOFAF();
+			Flip_AF();
 			UpdateFlags_SFZFPF();
 			StoreResult();
 			break;
@@ -728,6 +737,7 @@ opcode_:
 			OPERAND_B = -OPERAND_B;
 			RESULT = OPERAND_A + OPERAND_B;
 			UpdateFlags_CFOFAF();
+			Flip_AF();
 			UpdateFlags_SFZFPF();
 			break;
 		}
@@ -1161,6 +1171,7 @@ opcode_:
 			OPERAND_B = -1;
 			RESULT = OPERAND_A + OPERAND_B;
 			UpdateFlags_OFSFZFAFPF();
+			Flip_AF();
 			SetRM(RESULT);
 			break;
 		case 0x02:
@@ -1239,6 +1250,7 @@ opcode_:
 		OPERAND_B = -1;
 		RESULT = OPERAND_A + OPERAND_B;
 		UpdateFlags_OFSFZFAFPF();
+		Flip_AF();
 		SetReg(OPCODE1 & 0x07, RESULT);
 		break;
 
@@ -1541,17 +1553,23 @@ opcode_:
 			CMD_NAME("NEG");
 			if (Byte())
 			{
-				OPERAND_A = (int8_t)GetRM();
-				OPERAND_A = -OPERAND_A;
-				SetRM(OPERAND_A);
-				SetFlag<CF>(OPERAND_A != 0);
+				OPERAND_A = 0;
+				OPERAND_B = (int8_t)GetRM();
+				OPERAND_B = -OPERAND_B;
+				SetRM(OPERAND_B);
+				SetFlag<CF>(OPERAND_B != 0);
+				UpdateFlags_OFSFZFAFPF();
+				Flip_AF();
 			}
 			else
 			{
-				OPERAND_A = (int16_t)GetRM();
-				OPERAND_A = -OPERAND_A;
-				SetRM(OPERAND_A);
-				SetFlag<CF>(OPERAND_A != 0);
+				OPERAND_A = 0;
+				OPERAND_B = (int16_t)GetRM();
+				OPERAND_B = -OPERAND_B;
+				SetRM(OPERAND_B);
+				SetFlag<CF>(OPERAND_B != 0);
+				UpdateFlags_OFSFZFAFPF();
+				Flip_AF();
 			}
 			break;
 
@@ -1570,7 +1588,9 @@ opcode_:
 		ADDRESS_METHOD = r16;
 		MODREGRM = ExtractByte();
 		CMD_NAME("IMUL");
-		OPERAND_A = (int16_t)GetReg();
+		GetReg();
+		APPEND_DBG(", ");
+		OPERAND_A = (int16_t)GetRM();
 		APPEND_DBG(", ");
 		OPERAND_B = (int8_t)GetIMM8();
 		APPEND_HEX_DBG(OPERAND_B);
@@ -1857,6 +1877,7 @@ opcode_:
 			OPERAND_B = -OPERAND_B;
 			RESULT = OPERAND_A + OPERAND_B;
 			UpdateFlags_CFOFAF();
+			Flip_AF();
 			UpdateFlags_SFZFPF();
 
 			if (i != times - 1)
@@ -2187,6 +2208,7 @@ opcode_:
 					m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
 					m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
 				}
+				Flip_AF();
 				if (i != times - 1)
 				{
 #ifdef _DEBUG
@@ -2234,12 +2256,15 @@ opcode_:
 
 		case 0x9E:
 			CMD_NAME("SAHF");
-			m_flags = (m_flags & 0xFF00) | GetRegB(AH);
+			{
+				byte mask = 0x80 | 0x40 | 0x10 | 0x04 | 0x01;
+				m_flags = (m_flags & 0xFF00) | (GetRegB(AH) & mask);
+			}
 			break;
 
 		case 0x9F:
 			CMD_NAME("LAHF");
-			SetRegB(AH, m_flags & 0xFF);
+			SetRegB(AH, (m_flags & 0xFF) | 0x02);
 			break;
 
 		case 0xD5:
@@ -2374,18 +2399,7 @@ opcode_:
 			CMD_NAME("HLT");
 			ASSERT(false, "HALT!");
 			break;
-
-		case 0xD9:
-			CMD_NAME("F2XM1");
-			GetIMM8();
-			ASSERT(false, "No FPU");
-			break;
-
-		case 0x9B:
-			CMD_NAME("WAIT");
-			ASSERT(false, "No WAIT implementation");
-			break;
-
+			
 		case 0xD7:
 			CMD_NAME("XLAT");
 			{
@@ -2399,7 +2413,44 @@ opcode_:
 			}
 			break;
 
+		case 0xC8:
+		{
+			CMD_NAME("ENTER");
+			word imm16 = GetIMM16();
+			byte level = GetIMM8();
+			level &= 0x1F;
 
+			word bp = GetRegW(BP);
+
+			Push(bp);
+			word frame_ptr16 = GetRegW(SP);
+
+			if (level > 0)
+			{
+				while (--level)
+				{
+					bp -= 2;
+					word temp16 = MemoryWord(select(GetSegment(SS), bp));
+					Push(temp16);
+				}
+
+				Push(frame_ptr16);
+			}
+
+			SetRegW(BP, frame_ptr16 + 0);
+			SetRegW(SP, GetRegW(SP) - imm16);
+		}
+		break;
+
+		case 0xC9:
+		{
+			CMD_NAME("LEAVE");
+			word bp = GetRegW(BP);
+			word value = MemoryWord(select(GetSegment(SS), bp));
+			SetRegW((byte)SP, bp + 2);
+			SetRegW(BP, value + 0);
+		}
+		break;
 	default:
 		UNKNOWN_OPCODE(OPCODE1);
 	}
