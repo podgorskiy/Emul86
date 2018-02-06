@@ -1373,7 +1373,7 @@ opcode_:
 
 	case 0x6A:
 		CMD_NAME("PUSH");
-		OPERAND_A = GetIMM8();
+		OPERAND_A = (int8_t)GetIMM8(); // sign extend
 		APPEND_HEX_DBG(OPERAND_A);
 		Push(OPERAND_A);
 		break;
@@ -2054,13 +2054,15 @@ opcode_:
 			word dst_offset = GetRegW(DI);
 			if (OPCODE1 & 1)
 			{
-				MemoryWord(select(dst_seg, dst_offset)) = MemoryWord(select(src_seg, src_offset));
+				word w = MemoryWord(select(src_seg, src_offset));
+				MemoryWord(select(dst_seg, dst_offset)) = w;
 				m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
 				m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
 			}
 			else
 			{
-				MemoryByte(select(dst_seg, dst_offset)) = MemoryByte(select(src_seg, src_offset));
+				byte b = MemoryByte(select(src_seg, src_offset));
+				MemoryByte(select(dst_seg, dst_offset)) = b;
 				m_registers[SI] += TestFlag<DF>() == 0 ? 1 : -1;
 				m_registers[DI] += TestFlag<DF>() == 0 ? 1 : -1;
 			}
