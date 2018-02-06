@@ -140,7 +140,7 @@ void Application::Update()
 {
 	static bool run = false;
 
-	uint32_t stopAt = -1;// select(0x3636, 0x813D);
+	uint32_t stopAt = select(0x3636, 0x6B67);
 	if (select(m_cpu.GetSegment(CPU::CS), m_cpu.IP) == stopAt)
 	{
 		run = false;
@@ -348,7 +348,7 @@ void Application::SetBIOSVars()
 	StoreW(0x40, 0x0004, 0x03E8); // COM3
 	StoreW(0x40, 0x0006, 0x02E8); // COM4
 
-	StoreB(0x40, VIDEO_MOD, 0x02); // Current active video mode
+	StoreB(0x40, VIDEO_MOD, 0x03); // Current active video mode
 
 	StoreW(0x40, NUMBER_OF_SCREEN_COLUMNS, 80); // Screen width in text columns
 	StoreB(0x40, BIOSMEM_CHAR_HEIGHT, 10);
@@ -1483,9 +1483,13 @@ bool Application::KeyCallback(int c)
 void Application::PushKey(int c)
 {
 	int tail = GetW(0x40, 0x1C);
+	if (tail < 0x1E)
+	{
+		tail = 0x1E;
+	}
 	StoreW(0x40, tail, c);
 	tail += 2;
-	if ((0x1E + 32) <= tail)
+	if ((0x1E + 32) < tail)
 	{
 		tail = 0x1E;
 	}
@@ -1497,6 +1501,10 @@ int Application::PopKey()
 	int head = GetW(0x40, 0x1A);
 	int c = GetW(0x40, head);
 	head += 2;
+	if (head < 0x1E)
+	{
+		head = 0x1E;
+	}
 	if ((0x1E + 32) <= head)
 	{
 		head = 0x1E;
