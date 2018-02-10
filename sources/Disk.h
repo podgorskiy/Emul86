@@ -30,6 +30,11 @@ public:
 	{
 		return m_biosBlock;
 	}
+
+	size_t size() const
+	{
+		return m_size;
+	}
 private:
 	uint8_t ReadB(uint32_t location);
 	uint16_t ReadW(uint32_t location);

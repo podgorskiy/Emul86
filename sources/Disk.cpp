@@ -43,6 +43,14 @@ void Disk::Open(const char * path)
 	m_biosBlock.numHeads = ReadW(0x01A);
 	m_biosBlock.drvNum = ReadB(0x024);
 	m_biosBlock.volID = ReadDW(0x027);
+
+	// guess geometry
+	m_biosBlock.numHeads = 16;
+	m_biosBlock.secPerTrk = 63;
+	int cyl = m_size / (m_biosBlock.numHeads * m_biosBlock.secPerTrk * 512);
+	m_size = ((size_t)cyl * m_biosBlock.numHeads * m_biosBlock.secPerTrk * 512);
+	m_biosBlock.totSec16 = m_size / 512;
+
 	memset(m_biosBlock.volLabel, 0, sizeof(m_biosBlock.volLabel));
 	memset(m_biosBlock.fileSysType, 0, sizeof(m_biosBlock.fileSysType));
 	for (int i = 0; i < 11; ++i)
