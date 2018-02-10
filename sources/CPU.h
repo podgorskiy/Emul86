@@ -135,7 +135,7 @@ public:
 	template<Flags F>
 	inline void SetFlag(bool x)
 	{
-		m_flags = m_flags & ~(1 << F) | (x ? (1 << F) : 0);
+		m_flags = m_flags & ~(uint16_t)(1 << F) | (x ? (1 << F) : 0);
 	}
 
 	template<Flags F>
@@ -147,7 +147,7 @@ public:
 	template<Flags F>
 	inline void ClearFlag()
 	{
-		m_flags &= ~(1 << F);
+		m_flags &= ~(uint16_t)(1 << F);
 	}
 
 	word GetReg(byte i);
@@ -220,6 +220,8 @@ private:
 	
 	inline void UpdateFlags_OF();
 
+	inline void UpdateFlags_OF_sub();
+
 	inline void UpdateFlags_AF();
 
 	inline void Flip_AF();
@@ -232,11 +234,15 @@ private:
 
 	inline void UpdateFlags_CFOFAF();
 
+	inline void UpdateFlags_CFOFAF_sub();
+
 	inline void UpdateFlags_SFZFPF();
 
 	inline void ClearFlags_CFOF();
 
 	inline void UpdateFlags_OFSFZFAFPF();
+
+	inline void UpdateFlags_OFSFZFAFPF_sub();
 
 	inline void Push(word x);
 

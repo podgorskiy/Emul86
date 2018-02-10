@@ -386,33 +386,19 @@ inline void CPU::UpdateFlags_CF()
 
 inline void CPU::UpdateFlags_OF()
 {
-	bool a_positive;
-	bool b_positive;
-	bool r_positive;
-	if (Byte())
-	{
-		a_positive = (OPERAND_A & 0x80) == 0;
-		b_positive = (OPERAND_B & 0x80) == 0;
-		r_positive = (RESULT & 0x80) == 0;
-	}
-	else
-	{
-		a_positive = (OPERAND_A & 0x8000) == 0;
-		b_positive = (OPERAND_B & 0x8000) == 0;
-		r_positive = (RESULT & 0x8000) == 0;
-	}
-	SetFlag<OF>(
-		(!a_positive && !b_positive && r_positive)
-		|| (a_positive && b_positive && !r_positive)
-		);
+	uint32_t mask = (0x80 + (ADDRESS_METHOD & rMask) * (0x8000 - 0x80));
+	SetFlag<OF>((RESULT ^ OPERAND_A) & (RESULT ^ OPERAND_B) & mask);
+}
+
+inline void CPU::UpdateFlags_OF_sub()
+{
+	uint32_t mask = (0x80 + (ADDRESS_METHOD & rMask) * (0x8000 - 0x80));
+	SetFlag<OF>((RESULT ^ OPERAND_A) & (OPERAND_A ^ OPERAND_B) & mask);
 }
 
 inline void CPU::UpdateFlags_AF()
 {
-	byte a = (OPERAND_A & 0xf);
-	byte b = (OPERAND_B & 0xf);
-	a += b;
-	SetFlag<AF>((a & 0x10) != 0);
+	SetFlag<AF>((RESULT ^ OPERAND_A ^ OPERAND_B) & 0x10);
 }
 
 inline void CPU::Flip_AF()
@@ -431,31 +417,23 @@ inline void CPU::UpdateFlags_PF()
 
 inline void CPU::UpdateFlags_ZF()
 {
-	if (Byte())
-	{
-		SetFlag<ZF>((RESULT & 0xFF) == 0);
-	}
-	else
-	{
-		SetFlag<ZF>((RESULT & 0xFFFF) == 0);
-	}
+	SetFlag<ZF>((RESULT & (0xFF + (ADDRESS_METHOD & rMask) * 0xFF00)) == 0);
 }
 
 inline void CPU::UpdateFlags_SF()
 {
-	if (Byte())
-	{
-		SetFlag<SF>((RESULT & 0x80) != 0);
-	}
-	else
-	{
-		SetFlag<SF>((RESULT & 0x8000) != 0);
-	}
+	SetFlag<SF>((RESULT & (0x80 + (ADDRESS_METHOD & rMask) * (0x8000 - 0x80))) != 0);
 }
 inline void CPU::UpdateFlags_CFOFAF()
 {
 	UpdateFlags_CF();
 	UpdateFlags_OF();
+	UpdateFlags_AF();
+}
+inline void CPU::UpdateFlags_CFOFAF_sub()
+{
+	UpdateFlags_CF();
+	UpdateFlags_OF_sub();
 	UpdateFlags_AF();
 }
 inline void CPU::UpdateFlags_SFZFPF()
@@ -477,6 +455,15 @@ inline void CPU::UpdateFlags_OFSFZFAFPF()
 	UpdateFlags_AF();
 	UpdateFlags_PF();
 }
+inline void CPU::UpdateFlags_OFSFZFAFPF_sub()
+{
+	UpdateFlags_OF_sub();
+	UpdateFlags_SF();
+	UpdateFlags_ZF();
+	UpdateFlags_AF();
+	UpdateFlags_PF();
+}
+
 inline void CPU::Push(word x)
 {
 	m_registers[SP] -= 2;
@@ -510,29 +497,30 @@ void CPU::Reset()
 	m_registers[DI] = 0xFFAC;
 	IP = 0;
 	m_segments[CS] = 0x10;
-	m_flags = 0;
+	m_flags = 2;
 	dbg_cmd_address[0] = 0;
 	dbg_cmd_name[0] = 0;
 	dbg_args[0] = 0;
 	dbg_args_ptr = dbg_args;
-	DisableA20Gate();
+	EnableA20Gate();
 
 	state_buff[0] = 0;
 }
 
 void CPU::Step()
 {
+#ifdef _DEBUG
 	dbg_args_ptr = dbg_args;
 	dbg_args[0] = 0;
 	
 	memcpy(m_old_registers, m_registers, sizeof(m_registers));
 	memcpy(m_old_segments, m_segments, sizeof(m_segments));
 	memcpy(&m_old_flags, &m_flags, sizeof(m_flags));
+#endif
 
 	bool LOCK = false;
 	bool REPN = false;
 	bool REP = false;
-
 
 #ifdef _DEBUG
 	if (logging_state)
@@ -581,8 +569,10 @@ opcode_:
 	print_address(dbg_cmd_address, m_segments[CS], (uint16_t)(IP-1));
 #endif
 
+#ifdef _DEBUG
 	mem_edit.HighlightMin = (((uint32_t)m_segments[CS]) << 4) + IP - 1;
 	mem_edit.HighlightMax = mem_edit.HighlightMin + 1;
+#endif
 
 	byte seg = 0;
 	byte data = 0;
@@ -606,7 +596,7 @@ opcode_:
 		CMD_NAME("ADC");
 		ADDRESS_METHOD = OPCODE1 & 7;
 		PrepareOperands();
-		RESULT = OPERAND_A + OPERAND_B + (TestFlag<CF>() ? 1 : 0);
+		RESULT = OPERAND_A + OPERAND_B + (uint32_t)TestFlag<CF>();
 		UpdateFlags_CFOFAF();
 		UpdateFlags_SFZFPF();
 		StoreResult();
@@ -619,6 +609,7 @@ opcode_:
 		ClearFlags_CFOF();
 		UpdateFlags_SFZFPF();
 		StoreResult();
+		ClearFlag<AF>();
 		break;
 	case 0x30:case 0x31:case 0x32:case 0x33:case 0x34:case 0x35:
 		CMD_NAME("XOR");
@@ -628,6 +619,7 @@ opcode_:
 		ClearFlags_CFOF();
 		UpdateFlags_SFZFPF();
 		StoreResult();
+		ClearFlag<AF>();
 		break;
 	case 0x08:case 0x09:case 0x0A:case 0x0B:case 0x0C:case 0x0D:
 		CMD_NAME("OR");
@@ -637,16 +629,14 @@ opcode_:
 		ClearFlags_CFOF();
 		UpdateFlags_SFZFPF();
 		StoreResult();
+		ClearFlag<AF>();
 		break;
 	case 0x18:case 0x19:case 0x1A:case 0x1B:case 0x1C:case 0x1D:
 		CMD_NAME("SBB");
 		ADDRESS_METHOD = OPCODE1 & 7;
 		PrepareOperands();
-		OPERAND_B += TestFlag<CF>() ? 1 : 0;
-		OPERAND_B = -OPERAND_B;
-		RESULT = OPERAND_A + OPERAND_B;
-		UpdateFlags_CFOFAF(); 
-		Flip_AF();
+		RESULT = OPERAND_A - OPERAND_B - (uint32_t)TestFlag<CF>();
+		UpdateFlags_CFOFAF_sub();
 		UpdateFlags_SFZFPF();
 		StoreResult();
 		break;
@@ -654,9 +644,8 @@ opcode_:
 		CMD_NAME("SUB");
 		ADDRESS_METHOD = OPCODE1 & 7;
 		PrepareOperands();
-		OPERAND_B = -OPERAND_B;
-		RESULT = OPERAND_A + OPERAND_B;
-		UpdateFlags_CFOFAF();
+		RESULT = OPERAND_A - OPERAND_B;
+		UpdateFlags_CFOFAF_sub();
 		UpdateFlags_SFZFPF();
 		StoreResult();
 		break;
@@ -664,16 +653,14 @@ opcode_:
 		CMD_NAME("CMP");
 		ADDRESS_METHOD = OPCODE1 & 7;
 		PrepareOperands();
-		OPERAND_B = -OPERAND_B;
-		RESULT = OPERAND_A + OPERAND_B;
-		UpdateFlags_CFOFAF();
-		Flip_AF();
+		RESULT = OPERAND_A - OPERAND_B;
+		UpdateFlags_CFOFAF_sub();
 		UpdateFlags_SFZFPF();
 		break;
 
 	case 0x80:case 0x81:case 0x82:case 0x83:
 		ADDRESS_METHOD = RM_IMM | OPCODE1 & 1;
-		PrepareOperands((OPCODE1 & 0x03) == 0x03);
+		PrepareOperands(OPCODE1 == 0x83); // sign extend opcodes starting with 0x83
 		OPCODE2 = (MODREGRM & REG) >> 3;
 
 		switch (OPCODE2)
@@ -691,21 +678,19 @@ opcode_:
 			ClearFlags_CFOF();
 			UpdateFlags_SFZFPF();
 			StoreResult();
+			ClearFlag<AF>();
 			break;
 		case 0x02:
 			CMD_NAME("ADC");
-			RESULT = OPERAND_A + OPERAND_B + (TestFlag<CF>() ? 1 : 0);
+			RESULT = OPERAND_A + OPERAND_B + (uint32_t)TestFlag<CF>();
 			UpdateFlags_CFOFAF();
 			UpdateFlags_SFZFPF();
 			StoreResult();
 			break;
 		case 0x03:
 			CMD_NAME("SBB");
-			OPERAND_B += TestFlag<CF>() ? 1 : 0;
-			OPERAND_B = -OPERAND_B;
-			RESULT = OPERAND_A + OPERAND_B;
-			UpdateFlags_CFOFAF();
-			Flip_AF();
+			RESULT = OPERAND_A - OPERAND_B - (uint32_t)TestFlag<CF>();
+			UpdateFlags_CFOFAF_sub();
 			UpdateFlags_SFZFPF();
 			StoreResult();
 			break;
@@ -715,13 +700,12 @@ opcode_:
 			ClearFlags_CFOF();
 			UpdateFlags_SFZFPF();
 			StoreResult();
+			ClearFlag<AF>();
 			break;
 		case 0x05:
 			CMD_NAME("SUB");
-			OPERAND_B = -OPERAND_B;
-			RESULT = OPERAND_A + OPERAND_B;
-			UpdateFlags_CFOFAF();
-			Flip_AF();
+			RESULT = OPERAND_A - OPERAND_B;
+			UpdateFlags_CFOFAF_sub();
 			UpdateFlags_SFZFPF();
 			StoreResult();
 			break;
@@ -731,13 +715,12 @@ opcode_:
 			ClearFlags_CFOF();
 			UpdateFlags_SFZFPF();
 			StoreResult();
+			ClearFlag<AF>();
 			break;
 		case 0x07:
 			CMD_NAME("CMP");
-			OPERAND_B = -OPERAND_B;
-			RESULT = OPERAND_A + OPERAND_B;
-			UpdateFlags_CFOFAF();
-			Flip_AF();
+			RESULT = OPERAND_A - OPERAND_B;
+			UpdateFlags_CFOFAF_sub();
 			UpdateFlags_SFZFPF();
 			break;
 		}
@@ -1168,10 +1151,9 @@ opcode_:
 			break;
 		case 0x01:
 			CMD_NAME("DEC");
-			OPERAND_B = -1;
-			RESULT = OPERAND_A + OPERAND_B;
-			UpdateFlags_OFSFZFAFPF();
-			Flip_AF();
+			OPERAND_B = 1;
+			RESULT = OPERAND_A - OPERAND_B;
+			UpdateFlags_OFSFZFAFPF_sub();
 			SetRM(RESULT);
 			break;
 		case 0x02:
@@ -1221,14 +1203,7 @@ opcode_:
 	case 0x99:
 		CMD_NAME("CWD");
 		OPERAND_A = GetRegW(0);
-		if (OPERAND_A & 0x8000)
-		{
-			SetRegW(DX, 0xFFFF);
-		}
-		else
-		{
-			SetRegW(DX, 0x0000);
-		}
+		SetRegW(DX, ((OPERAND_A & 0x8000) != 0) * 0xFFFF);
 		break;
 
 	case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x47:
@@ -1247,10 +1222,9 @@ opcode_:
 		ADDRESS_METHOD = r16;
 		APPEND_DBG_REGW((OPCODE1 & 0x07));
 		OPERAND_A = GetRegW(OPCODE1 & 0x07);
-		OPERAND_B = -1;
-		RESULT = OPERAND_A + OPERAND_B;
-		UpdateFlags_OFSFZFAFPF();
-		Flip_AF();
+		OPERAND_B = 1;
+		RESULT = OPERAND_A - OPERAND_B;
+		UpdateFlags_OFSFZFAFPF_sub();
 		SetReg(OPCODE1 & 0x07, RESULT);
 		break;
 
@@ -1322,7 +1296,7 @@ opcode_:
 
 	case 0x9D:
 		CMD_NAME("POPF");
-		m_flags = Pop();
+		m_flags = Pop() | 0x2;
 		break;
 
 	case 0x0F:
@@ -1361,6 +1335,28 @@ opcode_:
 			CMD_NAME("JP"); condition = TestFlag<PF>(); CJMP16
 		case 0x88:
 			CMD_NAME("JS"); condition = TestFlag<SF>(); CJMP16
+
+		case 0xAC:
+			CMD_NAME("SHRD");
+			ADDRESS_METHOD = r16;
+			MODREGRM = ExtractByte();
+			OPCODE2 = (MODREGRM & REG) >> 3;
+
+			times = GetIMM8();
+			OPERAND_A = GetRM() | GetRegW((MODREGRM & REG) >> 3) * 0x10000;
+			RESULT = OPERAND_A;
+
+			for (int i = 0; i < times; ++i)
+			{
+				SetFlag<CF>(1 & RESULT);
+				RESULT = RESULT / 2;
+				SetFlag<OF>((MSB_MASK & OPERAND_A) != 0);
+				UpdateFlags_SFZFPF();
+				ClearFlag<AF>();
+			}
+			SetRM(RESULT);
+			break;
+
 		default:
 			UNKNOWN_OPCODE(OPCODE2);
 		}
@@ -1445,6 +1441,7 @@ opcode_:
 			UpdateFlags_SFZFPF();
 			SetFlag<CF>(false);
 			SetFlag<OF>(false);
+			ClearFlag<AF>();
 			break;
 		case 0x04:
 			CMD_NAME("MUL");
@@ -1466,6 +1463,10 @@ opcode_:
 				SetFlag<OF>(RESULT & 0xFFFF0000);
 				SetFlag<CF>(RESULT & 0xFFFF0000);
 			}
+			UpdateFlags_ZF();
+			ClearFlag<AF>();
+			UpdateFlags_PF();
+			UpdateFlags_SF();
 			break;
 		case 0x05:
 			CMD_NAME("IMUL");
@@ -1477,8 +1478,9 @@ opcode_:
 				OPERAND_B = (int8_t)GetRM();
 				RESULT = OPERAND_A * OPERAND_B;
 				m_registers[0] = RESULT;
-				SetFlag<OF>(RESULT & 0xFF00);
-				SetFlag<CF>(RESULT & 0xFF00);
+				uint32_t of = RESULT & 0xFF80;
+				SetFlag<OF>(of != 0 && of != 0xFF80);
+				SetFlag<CF>(of != 0 && of != 0xFF80);
 			}
 			else
 			{
@@ -1489,9 +1491,14 @@ opcode_:
 				RESULT = OPERAND_A * OPERAND_B;
 				m_registers[0] = RESULT;
 				m_registers[DX] = RESULT >> 16;
-				SetFlag<OF>(RESULT & 0xFFFF0000);
-				SetFlag<CF>(RESULT & 0xFFFF0000);
+				uint32_t of = RESULT & 0xFFFF8000;
+				SetFlag<OF>(of != 0 && of != 0xFFFF8000);
+				SetFlag<CF>(of != 0 && of != 0xFFFF8000);
 			}
+			UpdateFlags_ZF();
+			ClearFlag<AF>();
+			UpdateFlags_PF();
+			UpdateFlags_SF();
 			break;
 
 		case 0x06:
@@ -1502,7 +1509,8 @@ opcode_:
 				OPERAND_A = (uint16_t)GetRegW(0);
 				APPEND_DBG(", ");
 				OPERAND_B = (uint16_t)GetRM();
-				SetRegB(AL, OPERAND_A / OPERAND_B);
+				RESULT = OPERAND_A / OPERAND_B;
+				SetRegB(AL, RESULT);
 				SetRegB(AH, (OPERAND_A % OPERAND_B));
 			}
 			else
@@ -1513,6 +1521,7 @@ opcode_:
 				OPERAND_A = (uint32_t)GetRegW(0) + ((uint32_t)GetRegW(DX) << 16);
 				APPEND_DBG(", ");
 				OPERAND_B = (uint16_t)GetRM();
+				RESULT = OPERAND_A / OPERAND_B;
 				if (OPERAND_B == 0)
 				{
 					m_registers[0] = 0;
@@ -1520,11 +1529,12 @@ opcode_:
 				}
 				else
 				{
-					m_registers[0] = OPERAND_A / OPERAND_B;
+					m_registers[0] = RESULT;
 					m_registers[DX] = OPERAND_A % OPERAND_B;
 				}
 			}
 			break;
+
 		case 0x07:
 			CMD_NAME("IDIV");
 			if (Byte())
@@ -1533,8 +1543,17 @@ opcode_:
 				OPERAND_A = (int16_t)GetRegW(0);
 				APPEND_DBG(", ");
 				OPERAND_B = (int8_t)GetRM();
-				SetRegB(AL, OPERAND_A / OPERAND_B);
-				SetRegB(AH, (OPERAND_A % OPERAND_B));
+				if (OPERAND_B == 0)
+				{
+					m_registers[0] = 0;
+					m_registers[DX] = 0;
+				}
+				else
+				{
+					RESULT = OPERAND_A / OPERAND_B;
+					SetRegB(AL, RESULT);
+					SetRegB(AH, (OPERAND_A % OPERAND_B));
+				}
 			}
 			else
 			{
@@ -1543,9 +1562,18 @@ opcode_:
 				APPEND_DBG_REGW(0);
 				OPERAND_A = (int32_t)(GetRegW(0) + ((uint32_t)GetRegW(DX) << 16));
 				APPEND_DBG(", ");
-				OPERAND_B = (int16_t)GetRM();
-				m_registers[0] = OPERAND_A / OPERAND_B;
-				m_registers[DX] = OPERAND_A % OPERAND_B;
+				OPERAND_B = (int16_t)GetRM();				
+				if (OPERAND_B == 0)
+				{
+					m_registers[0] = 0;
+					m_registers[DX] = 0;
+				}
+				else
+				{
+					RESULT = OPERAND_A / OPERAND_B;
+					m_registers[0] = RESULT;
+					m_registers[DX] = OPERAND_A % OPERAND_B;
+				}
 			}
 			break;
 
@@ -1553,31 +1581,29 @@ opcode_:
 			CMD_NAME("NEG");
 			if (Byte())
 			{
-				OPERAND_A = 0;
-				OPERAND_B = (int8_t)GetRM();
-				OPERAND_B = -OPERAND_B;
-				SetRM(OPERAND_B);
-				SetFlag<CF>(OPERAND_B != 0);
-				UpdateFlags_OFSFZFAFPF();
-				Flip_AF();
+				OPERAND_B = 0;
+				OPERAND_A = (int8_t)GetRM();
+				RESULT = -OPERAND_A;
+				SetRM(RESULT);
+				SetFlag<CF>(RESULT != 0);
+				UpdateFlags_OFSFZFAFPF_sub();
 			}
 			else
 			{
-				OPERAND_A = 0;
-				OPERAND_B = (int16_t)GetRM();
-				OPERAND_B = -OPERAND_B;
-				SetRM(OPERAND_B);
-				SetFlag<CF>(OPERAND_B != 0);
-				UpdateFlags_OFSFZFAFPF();
-				Flip_AF();
+				OPERAND_B = 0;
+				OPERAND_A = (int16_t)GetRM();
+				RESULT = -OPERAND_A;
+				SetRM(RESULT);
+				SetFlag<CF>(RESULT != 0);
+				UpdateFlags_OFSFZFAFPF_sub();
 			}
 			break;
 
 		case 0x02:
 			CMD_NAME("NOT");
 			OPERAND_A = GetRM();
-			OPERAND_A = ~OPERAND_A;
-			SetRM(OPERAND_A);
+			RESULT = ~OPERAND_A;
+			SetRM(RESULT);
 			break;
 		default:
 			UNKNOWN_OPCODE(OPCODE2);
@@ -1592,12 +1618,17 @@ opcode_:
 		APPEND_DBG(", ");
 		OPERAND_A = (int16_t)GetRM();
 		APPEND_DBG(", ");
-		OPERAND_B = (int8_t)GetIMM8();
+		OPERAND_B = (int8_t)GetIMM8(); // sign extend
 		APPEND_HEX_DBG(OPERAND_B);
 		RESULT = OPERAND_A * OPERAND_B;
-		SetFlag<OF>(RESULT & 0xFFFF0000);
-		SetFlag<CF>(RESULT & 0xFFFF0000);
 		SetReg(RESULT);
+		UpdateFlags_ZF();
+		ClearFlag<AF>();
+		UpdateFlags_PF();
+		UpdateFlags_SF();
+		RESULT = RESULT & 0xFFFF8000;
+		SetFlag<OF>(RESULT != 0 && RESULT != 0xFFFF8000);
+		SetFlag<CF>(RESULT != 0 && RESULT != 0xFFFF8000);
 		break;
 
 	case 0x69:
@@ -1611,9 +1642,14 @@ opcode_:
 		OPERAND_B = (int16_t)GetIMM16();
 		APPEND_HEX_DBG(OPERAND_B);
 		RESULT = OPERAND_A * OPERAND_B;
-		SetFlag<OF>(RESULT & 0xFFFF0000);
-		SetFlag<CF>(RESULT & 0xFFFF0000);
 		SetReg(RESULT);
+		UpdateFlags_ZF();
+		ClearFlag<AF>();
+		UpdateFlags_PF();
+		UpdateFlags_SF();
+		RESULT = RESULT & 0xFFFF8000;
+		SetFlag<OF>(RESULT != 0 && RESULT != 0xFFFF8000);
+		SetFlag<CF>(RESULT != 0 && RESULT != 0xFFFF8000);
 		break;
 
 	case 0xD0: case 0xD1: case 0xD2: case 0xD3:
@@ -1699,18 +1735,21 @@ opcode_:
 				RESULT = RESULT * 2;
 				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != TestFlag<CF>());
 				UpdateFlags_SFZFPF();
+				ClearFlag<AF>();
 				break;
 			case 0x05:
 				SetFlag<CF>(1 & RESULT);
 				RESULT = RESULT / 2;
 				SetFlag<OF>((MSB_MASK & OPERAND_A) != 0);
 				UpdateFlags_SFZFPF();
+				ClearFlag<AF>();
 				break;
 			case 0x06:
 				SetFlag<CF>(MSB_MASK & RESULT);
 				RESULT = RESULT * 2;
 				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != TestFlag<CF>());
 				UpdateFlags_SFZFPF();
+				ClearFlag<AF>();
 				break;
 			case 0x07:
 			{
@@ -1719,6 +1758,7 @@ opcode_:
 				RESULT = RESULT / 2 + negative * MSB_MASK;
 				ClearFlag<OF>();
 				UpdateFlags_SFZFPF();
+				ClearFlag<AF>();
 			}
 				break;
 
@@ -1749,6 +1789,18 @@ opcode_:
 
 		switch (OPCODE2)
 		{
+		case 0x00:
+			CMD_NAME("ROL");
+			break;
+		case 0x01:
+			CMD_NAME("ROR");
+			break;
+		case 0x02:
+			CMD_NAME("RCL");
+			break;
+		case 0x03:
+			CMD_NAME("RCR");
+			break;
 		case 0x04:
 			CMD_NAME("SHL");
 			break;
@@ -1771,6 +1823,28 @@ opcode_:
 		{
 			switch (OPCODE2)
 			{
+			case 0x00:
+				SetFlag<CF>(MSB_MASK & RESULT);
+				RESULT = RESULT * 2 + TestFlag<CF>();
+				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != TestFlag<CF>());
+				break;
+			case 0x01:
+				SetFlag<CF>(1 & RESULT);
+				RESULT = RESULT / 2 + TestFlag<CF>() * MSB_MASK;
+				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != (((MSB_MASK >> 1) & RESULT) != 0));
+				break;
+			case 0x02:
+				tempCF = (MSB_MASK & RESULT) != 0;
+				RESULT = RESULT * 2 + TestFlag<CF>();
+				SetFlag<CF>(tempCF);
+				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != TestFlag<CF>());
+				break;
+			case 0x03:
+				tempCF = 1 & RESULT;
+				RESULT = RESULT / 2 + TestFlag<CF>() * MSB_MASK;
+				SetFlag<CF>(tempCF);
+				SetFlag<OF>(((MSB_MASK & RESULT) != 0) != (((MSB_MASK >> 1) & RESULT) != 0));
+				break;
 			case 0x04:
 				SetFlag<CF>(MSB_MASK & RESULT);
 				RESULT = RESULT * 2;
@@ -1874,10 +1948,8 @@ opcode_:
 				m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
 			}
 
-			OPERAND_B = -OPERAND_B;
-			RESULT = OPERAND_A + OPERAND_B;
-			UpdateFlags_CFOFAF();
-			Flip_AF();
+			RESULT = OPERAND_A - OPERAND_B;
+			UpdateFlags_CFOFAF_sub();
 			UpdateFlags_SFZFPF();
 
 			if (i != times - 1)
@@ -1988,7 +2060,7 @@ opcode_:
 		CMD_NAME("IRET");
 		IP = Pop();
 		m_segments[CS] = Pop();
-		m_flags = Pop();
+		m_flags = Pop() | 0x2;
 		break;
 
 	case 0xC5:
@@ -2029,7 +2101,7 @@ opcode_:
 
 	case 0xA4: case 0xA5:
 		ADDRESS_METHOD = OPCODE1 & 1;
-		if (REP)
+		if (REP || REPN)
 		{
 			times = m_registers[CX];
 		}
@@ -2072,7 +2144,7 @@ opcode_:
 				*(dbg_args_ptr = dbg_args) = 0;
 	#endif
 			}
-			if (REP)
+			if (REP || REPN)
 			{
 				m_registers[CX]--;
 			}
@@ -2162,6 +2234,7 @@ opcode_:
 			UpdateFlags_SFZFPF();
 			SetFlag<CF>(false);
 			SetFlag<OF>(false);
+			ClearFlag<AF>();
 			break;
 
 		case 0xA6: case 0xA7:
@@ -2192,9 +2265,8 @@ opcode_:
 				{
 					OPERAND_A = MemoryByte(select(src_seg, src_offset));
 					OPERAND_B = MemoryByte(select(dst_seg, dst_offset));
-					OPERAND_B = -OPERAND_B;
-					RESULT = OPERAND_A + OPERAND_B;
-					UpdateFlags_CFOFAF();
+					RESULT = OPERAND_A - OPERAND_B;
+					UpdateFlags_CFOFAF_sub();
 					UpdateFlags_SFZFPF();
 					m_registers[SI] += TestFlag<DF>() == 0 ? 1 : -1;
 					m_registers[DI] += TestFlag<DF>() == 0 ? 1 : -1;
@@ -2203,14 +2275,12 @@ opcode_:
 				{
 					OPERAND_A = MemoryWord(select(src_seg, src_offset));
 					OPERAND_B = MemoryWord(select(dst_seg, dst_offset));
-					OPERAND_B = -OPERAND_B;
-					RESULT = OPERAND_A + OPERAND_B;
-					UpdateFlags_CFOFAF();
+					RESULT = OPERAND_A - OPERAND_B;
+					UpdateFlags_CFOFAF_sub();
 					UpdateFlags_SFZFPF();
 					m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
 					m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
 				}
-				Flip_AF();
 				if (i != times - 1)
 				{
 #ifdef _DEBUG
@@ -2254,13 +2324,14 @@ opcode_:
 			UpdateFlags_SFZFPF();
 			SetFlag<CF>(false);
 			SetFlag<OF>(false);
+			ClearFlag<AF>();
 			break;
 
 		case 0x9E:
 			CMD_NAME("SAHF");
 			{
 				byte mask = 0x80 | 0x40 | 0x10 | 0x04 | 0x01;
-				m_flags = (m_flags & 0xFF00) | (GetRegB(AH) & mask);
+				m_flags = (m_flags & 0xFF00) | (GetRegB(AH) & mask) | 0x2;
 			}
 			break;
 
@@ -2453,6 +2524,12 @@ opcode_:
 			SetRegW(BP, value + 0);
 		}
 		break;
+
+		// escaping FPU commands
+		case 0xD8: case 0xD9: case 0xDA: case 0xDB: case 0xDC: case 0xDD: case 0xDE: case 0xDF:
+			GetIMM8();
+			break;
+
 	default:
 		UNKNOWN_OPCODE(OPCODE1);
 	}
@@ -2473,6 +2550,7 @@ opcode_:
 		{
 			tmp = n2hexstr(tmp, m_segments[i]);
 		}
+		n2hexstr(tmp, m_flags); 
 	}
 #endif
 }
