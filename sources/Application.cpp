@@ -25,6 +25,9 @@ inline bool gl3wIsSupported(int, int)
 #include <chrono>
 #include <ctime>
 
+#define TIME_ZERO(X) X
+//#define TIME_ZERO(X) 0
+
 /*
 	40:49	byte	Current video mode  (see VIDEO MODE)
 	40:4A	word	Number of screen columns
@@ -103,6 +106,7 @@ int Application::Init()
 	m_cpu.SetRamPort(m_ram, m_port);
 	m_cpu.SetInterruptHandler(this);
 
+	/*
 	SetBIOSVars();
 
 	m_disk.Open("Dos6.22.img");
@@ -110,6 +114,7 @@ int Application::Init()
 	m_disk.Read((char*)m_ram + loadAddress, 0, 0x200);
 	m_cpu.IP = loadAddress;
 	m_cpu.SetSegment(CPU::CS, 0);
+	*/
 	m_int16_0 = false;
 	start = std::chrono::system_clock::now();
 	m_currentKeyCode = 0;
@@ -140,7 +145,7 @@ void Application::Update()
 {
 	static bool run = false;
 
-	uint32_t stopAt = select(0x3636, 0x6B67);
+	uint32_t stopAt = -1;// select(0xF000, 0x017C);
 	if (select(m_cpu.GetSegment(CPU::CS), m_cpu.IP) == stopAt)
 	{
 		run = false;
@@ -166,15 +171,18 @@ void Application::Update()
 
 	if (doStep)
 	{
-		auto start = std::chrono::steady_clock::now();
+		std::chrono::time_point<std::chrono::system_clock> framestart = std::chrono::system_clock::now();
 
 		for (int i = 0; i < doStep && !m_int16_0; ++i)
 		{
 			if (i % 500 == 0)
 			{
-				auto current_timestamp = std::chrono::steady_clock::now();
-				std::chrono::duration<float> elapsed_time = (current_timestamp - start);
+				auto current_timestamp = std::chrono::system_clock::now();
+				std::chrono::duration<float> elapsed_time = (current_timestamp - framestart);
 				float seconds = elapsed_time.count();
+				int ticks = int((current_timestamp - start).count() * 1193180 / 65536 / 1000);
+				StoreW(0x40, 0x6c, ticks % 0x1000);
+				StoreW(0x40, 0x6e, ticks / 0x1000);
 				if (seconds > 0.03f)
 				{
 					ImGui::Text("CPS: %d", (int)(i / seconds));
@@ -182,11 +190,13 @@ void Application::Update()
 				}
 			}
 			m_cpu.Step();
+#ifdef _DEBUG
 			if (select(m_cpu.GetSegment(CPU::CS), m_cpu.IP) == stopAt)
 			{
 				run = false;
 				break;
 			}
+#endif
 		}
 	}
 	ImGui::End();
@@ -224,6 +234,10 @@ void Application::Update()
 	{
 		m_disk.Open("Dos5.0.img");
 	}
+	if (ImGui::Button("Mount c.img"))
+	{
+		m_disk.Open("F:/c.img");
+	}
 	
 	
 	static int loadAddress = 0x7C00;
@@ -245,11 +259,15 @@ void Application::Update()
 
 	if (ImGui::Button("Load COM tests"))
 	{
-		m_disk.Open("../Tests/Test2/test.COM");
-		m_disk.Read((char*)m_ram + (uint32_t)0x100, 0, 0x200);
-		m_disk.Close();
-		m_cpu.IP = 0x100;
-		m_cpu.SetSegment(CPU::CS, 0);
+		SetBIOSVars();
+		FILE* f = fopen("../testrom", "rb");
+		fseek(f, 0L, SEEK_END);
+		size_t size = ftell(f);
+		fseek(f, 0L, SEEK_SET);
+		fread((char*)m_ram + (uint32_t)0xf0000, size, 1, f);
+		m_cpu.Reset();
+		m_cpu.IP = 0xfff0;
+		m_cpu.SetSegment(CPU::CS, 0xf000);
 	}
 
 	ImGui::End();
@@ -285,9 +303,32 @@ void Application::DrawScreen()
 			st.PutSymbol(symbol, clm * 8 * m_scale, row * 16 * m_scale);
 		}
 	}
-	st.End();
+
+	int top = GetB(0x40, 0x60);
+	int bottom = GetB(0x40, 0x61);
+
+	int cursor = GetW(0x40, CURSOR_POSITION + 2 * active_page);
+	int xcurs = cursor & 0x00ff; int ycurs = (cursor & 0xff00) >> 8;
+
 	auto now = std::chrono::system_clock::now();
 	std::chrono::duration<double> elapsed_seconds = now - start;
+
+	st.End();
+	if (!(bottom & 0x20) && ((int)(5 * elapsed_seconds.count())) % 2)
+	{
+		st.EnableBlending(true);
+		st.Begin();
+		char attribute = m_ram[p + ycurs * screenWidth * 2 + xcurs * 2 + screenHeight * screenWidth * 2 * active_page + 1];
+		char forgroundColor = attribute & 0x07;
+		bool forgroundBright = (attribute & 0x08) != 0;
+		SimpleText::Color forgroundColorST = ToSimpleTextColor(forgroundColor);
+		st.SetColor(SimpleText::TEXT_COLOR, forgroundColorST, forgroundBright ? SimpleText::BOLD : SimpleText::NORMAL);
+		st.SetColor(SimpleText::BACKGROUND_COLOR, 0, 0, 0, 0);
+		st.PutSymbol('_', xcurs * 8 * m_scale, ycurs * 16 * m_scale);
+		st.End();
+		st.EnableBlending(false);
+	}
+	
 	StoreW(0x0040, 0x006E, int(elapsed_seconds.count() * 1193180 / 65536));
 }
 
@@ -353,8 +394,9 @@ void Application::SetBIOSVars()
 	StoreW(0x40, NUMBER_OF_SCREEN_COLUMNS, 80); // Screen width in text columns
 	StoreB(0x40, BIOSMEM_CHAR_HEIGHT, 10);
 	StoreB(0x40, BIOSMEM_NB_ROWS, 24);
-	
 
+	StoreB(0x40, 0x96, 0x10); //101/102 enhanced keyboard installed
+	
 	StoreB(BIOS_SEGMENT, 0xff53, 0xCF); // dummy IRET
 
 	StoreString(BIOS_SEGMENT, 0xff00, "(c) 2018 Emul86 BIOS");
@@ -462,7 +504,7 @@ void Application::SetBIOSVars()
 
 	*/
 	uint16_t equpment = 0
-		| 1
+		| 0
 		| 0 << 1
 		| 1 << 2
 		| 0 << 3
@@ -506,8 +548,8 @@ void Application::SetBIOSVars()
 #define SET_CH(b) m_cpu.SetRegB(CPU::CH, b)
 #define SET_CL(b) m_cpu.SetRegB(CPU::CL, b)
 #define SET_CX(b) m_cpu.SetRegW(CPU::CX, b)
-#define SET_BX(b) m_cpu.SetRegW(CPU::BX, b)
 #define SET_DX(b) m_cpu.SetRegW(CPU::DX, b)
+#define SET_BX(b) m_cpu.SetRegW(CPU::BX, b)
 #define SET_AX(b) m_cpu.SetRegW(CPU::AX, b)
 #define GET_AH() m_cpu.GetRegB(CPU::AH)
 #define GET_BH() m_cpu.GetRegB(CPU::BH)
@@ -558,6 +600,10 @@ void Application::Int(CPU::byte x)
 
 		// Set cursor type
 		case 0x01:
+			arg = GET_CL();
+			StoreB(0x40, 0x60, arg);
+			arg = GET_CH();
+			StoreB(0x40, 0x61, arg);
 			break;
 
 		// Set cursor position
@@ -571,10 +617,8 @@ void Application::Int(CPU::byte x)
 			*/
 			{
 				int page = GET_BH();
-				int row = GET_DH();
-				int column = GET_DL();
-				StoreB(0x40, CURSOR_POSITION + 2 * page + 0, row);
-				StoreB(0x40, CURSOR_POSITION + 2 * page + 1, column);
+				int cursorpos = GET_DX();
+				StoreW(0x40, CURSOR_POSITION + 2 * page, cursorpos);
 			}
 			break;
 
@@ -589,12 +633,12 @@ void Application::Int(CPU::byte x)
 			*/
 			{
 				int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
-				int row = GetB(0x40, CURSOR_POSITION + 2 * active_page + 0);
-				int column = GetB(0x40, CURSOR_POSITION + 2 * active_page + 1);
-				SET_DH(row);
-				SET_DL(column);
-				SET_CH(0);
-				SET_CL(5);
+				int cursorpos = GetW(0x40, CURSOR_POSITION + 2 * active_page);
+				
+				arg = GET_CH();
+				StoreB(0x40, 0x61, arg);
+				SET_DX(cursorpos);
+				SET_CX(GetW(0x40, 0x60));
 			}
 			break;
 
@@ -640,6 +684,41 @@ void Application::Int(CPU::byte x)
 			}
 			break;
 
+		// Scroll active page down
+		case 0x07:
+		{
+			int n = GET_AL();
+			int a = GET_BH();
+			int y1 = GET_CH();
+			int x1 = GET_CL();
+			int y2 = GET_DH();
+			int x2 = GET_DL();
+			int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
+			int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
+			int screenHeight = 25;
+			uint32_t p = 0xB800 << 4;
+
+			for (int row = y2; row >= y1; --row)
+			{
+				if (row - n >= y1 && n != 0)
+				{
+					for (int col = x1; col <= x2; ++col)
+					{
+						int tmp = GetW(CGA_DISPLAY_RAM, (row - n) * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page);
+						StoreW(CGA_DISPLAY_RAM, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, tmp);
+					}
+				}
+				else
+				{
+					for (int col = x1; col <= x2; ++col)
+					{
+						StoreW(CGA_DISPLAY_RAM, row * screenWidth * 2 + col * 2 + screenHeight * screenWidth * 2 * active_page, a << 8);
+					}
+				}
+			}
+		}
+		break;
+
 		// Write text in teletype mode
 		case 0x0E:
 			/*
@@ -649,54 +728,54 @@ void Application::Int(CPU::byte x)
 			*/
 			{
 				char symbol = GET_AL();
-				char page = 0;// GET_BH();
+				char page = GET_BH();
 				int attribute = 7;
-				int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
-				int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
+				int cursor = GetW(0x40, CURSOR_POSITION + 2 * page);
+				int xcurs = cursor & 0x00ff; int ycurs = (cursor & 0xff00) >> 8;
 				int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 				int screenHeight = 25;
 
-				if (row >= screenHeight)
+				if (ycurs >= screenHeight)
 				{
 					scrollOneLine();
-					row = screenHeight - 1;
+					ycurs = screenHeight - 1;
 				}
 
 				if (symbol == '\b')
 				{
-					--column;
-					if (column < 0)
+					--xcurs;
+					if (xcurs < 0)
 					{
-						column = screenWidth;
-						row--;
-						if (row < 0)
+						xcurs = screenWidth;
+						ycurs--;
+						if (ycurs < 0)
 						{
-							row = screenHeight;
+							ycurs = screenHeight;
 						}
 					}
 				}
 				else if (symbol == '\n')
 				{
-					column = 0;
-					row++;
+					xcurs = 0;
+					ycurs++;
 				}
 				else if (symbol == '\r')
 				{
-					column = 0;
+					xcurs = 0;
 				}
 				else
 				{
-					StoreB(0xB800, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page, symbol);
-					++column;
-					if (column > screenWidth)
+					StoreB(0xB800, ycurs * screenWidth * 2 + xcurs * 2 + screenHeight * screenWidth * 2 * page, symbol);
+					++xcurs;
+					if (xcurs > screenWidth)
 					{
-						column = 0;
-						row++;
+						xcurs = 0;
+						ycurs++;
 					}
 				}
 
-				StoreB(0x40, CURSOR_POSITION + 2 * page + 0, row);
-				StoreB(0x40, CURSOR_POSITION + 2 * page + 1, column);
+				cursor = ycurs; cursor <<= 8; cursor += xcurs;
+				StoreW(0x40, CURSOR_POSITION + 2 * page , cursor);
 			}
 
 			break;
@@ -715,26 +794,26 @@ void Application::Int(CPU::byte x)
 				char page = GET_BH();
 				int attribute = GET_BL();
 				int count = GET_CX();
-				int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
-				int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
+				int cursor = GetW(0x40, CURSOR_POSITION + 2 * page);
+				int xcurs = cursor & 0x00ff; int ycurs = (cursor & 0xff00) >> 8;
 				int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
 				int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 				int screenHeight = 25;
 
-				if (row >= screenHeight)
+				if (ycurs >= screenHeight)
 				{
 					scrollOneLine();
-					row = screenHeight - 1;
+					ycurs = screenHeight - 1;
 				}
 
 				for (int i = 0; i < count; ++i)
 				{
-					StoreW(CGA_DISPLAY_RAM, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page, symbol + (attribute << 8));
-					++column;
-					if (column >= screenWidth)
+					StoreW(CGA_DISPLAY_RAM, ycurs * screenWidth * 2 + xcurs * 2 + screenHeight * screenWidth * 2 * page, symbol + (attribute << 8));
+					++xcurs;
+					if (xcurs >= screenWidth)
 					{
-						column = 0;
-						row++;
+						xcurs = 0;
+						ycurs++;
 					}
 				}
 			}
@@ -753,11 +832,11 @@ void Application::Int(CPU::byte x)
 			*/
 			{
 				char page = GET_BH();
-				int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
-				int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
+				int cursor = GetW(0x40, CURSOR_POSITION + 2 * page);
+				int xcurs = cursor & 0x00ff; int ycurs = (cursor & 0xff00) >> 8;
 				int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 				int screenHeight = 25;
-				uint16_t result = GetW(CGA_DISPLAY_RAM, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page);
+				uint16_t result = GetW(CGA_DISPLAY_RAM, ycurs * screenWidth * 2 + xcurs * 2 + screenHeight * screenWidth * 2 * page);
 				SET_AX(result);
 			}
 			break;
@@ -803,22 +882,22 @@ void Application::Int(CPU::byte x)
 				char page = GET_BH();
 				char foreground_color = GET_BL();
 				int count = GET_CX();
-				int row = GetB(0x40, CURSOR_POSITION + 2 * page + 0);
-				int column = GetB(0x40, CURSOR_POSITION + 2 * page + 1);
+				int cursor = GetW(0x40, CURSOR_POSITION + 2 * page);
+				int xcurs = cursor & 0x00ff; int ycurs = (cursor & 0xff00) >> 8;
 				int active_page = GetB(0x40, ACTIVE_DISPLAY_PAGE);
 				int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 				int screenHeight = 25;
 				for (int i = 0; i < count; ++i)
 				{
-					StoreW(CGA_DISPLAY_RAM, row * screenWidth * 2 + column * 2 + screenHeight * screenWidth * 2 * page, symbol + (7 << 8));
-					++column;
-					if (column > screenWidth)
+					StoreW(CGA_DISPLAY_RAM, ycurs * screenWidth * 2 + xcurs * 2 + screenHeight * screenWidth * 2 * page, symbol + (7 << 8));
+					++xcurs;
+					if (xcurs > screenWidth)
 					{
-						column = 0;
-						row++;
-						if (row > screenHeight)
+						xcurs = 0;
+						ycurs++;
+						if (ycurs > screenHeight)
 						{
-							row = 0;
+							ycurs = 0;
 						}
 					}
 				}
@@ -927,6 +1006,36 @@ void Application::Int(CPU::byte x)
 		}
 		break;
 
+		//Update DESQView/TopView Virtual Screen Regen Buffer
+		case 0x1A:
+		{
+			/*
+			AH = 1A
+			AL = 00 get video display combination
+			= 01 set video display combination
+			BL = active display  (see table below)
+			BH = inactive display
+
+
+			on return:
+			AL = 1A, if a valid function was requested in AH
+			BL = active display  (AL=00, see table below)
+			BH = inactive display  (AL=00)
+			*/
+			SET_AL(0x1A);
+			SET_BL(0x08);
+			SET_BH(0);
+		}
+		break;
+
+		// Video7 VGA,VEGA VGA - INSTALLATION CHECK
+		case 0x6F:
+			break;
+
+		// Set Color Palette
+		case 0x0B:
+			break;
+
 		default:
 			ASSERT(false, "Unknown int10 function: 0x%s\n", n2hexstr(function).c_str());
 			break;
@@ -974,7 +1083,7 @@ void Application::Int(CPU::byte x)
 			ES:BX = pointer to buffer
 			*/
 			// We have only floppy disk, drive number 0.
-			if (GET_DL() == 0)
+			if (GET_DL() == 0x80)
 			{
 				int DiskNo = m_cpu.GetRegB(CPU::DL);
 				int HeadNo = m_cpu.GetRegB(CPU::DH);
@@ -984,7 +1093,7 @@ void Application::Int(CPU::byte x)
 				int ADDR = select(m_cpu.GetSegment(CPU::ES), m_cpu.GetRegW(CPU::BX));
 
 				int LBA = (TrackNo * m_disk.GetBiosBlock().numHeads + HeadNo) * m_disk.GetBiosBlock().secPerTrk + SectorNo - 1;
-				ASSERT(LBA <= m_disk.GetBiosBlock().totSec16, "Error int13");
+				//ASSERT(LBA <= m_disk.GetBiosBlock().totSec16, "Error int13");
 				m_disk.Read((char *)m_ram + ADDR, 512 * LBA, 512 * SectorNum);
 				SET_AH(0x00); // no error
 				SET_DISK_RET_STATUS(0x00);
@@ -1008,7 +1117,7 @@ void Application::Int(CPU::byte x)
 			DL = drive number (0=A:, 1=2nd floppy, 80h=drive 0, 81h=drive 1)
 			ES:BX = pointer to buffer
 			*/
-			if (GET_DL() == 0)
+			if (GET_DL() == 0x80)
 			{
 				int DiskNo = m_cpu.GetRegB(CPU::DL);
 				int HeadNo = m_cpu.GetRegB(CPU::DH);
@@ -1067,15 +1176,15 @@ void Application::Int(CPU::byte x)
 			*/
 
 			// We have only floppy disk, drive number 0.
-			if (GET_DL() == 0)
+			if (GET_DL() == 0x80)
 			{
 				SET_DH(m_disk.GetBiosBlock().numHeads - 1);
 				SET_CL(m_disk.GetBiosBlock().secPerTrk);
 				SET_CH((m_disk.GetBiosBlock().totSec16 / m_disk.GetBiosBlock().secPerTrk) / m_disk.GetBiosBlock().numHeads - 1);
 				SET_DL(1);
-				SET_BX(0x0004);
-				SET_ES(BIOS_SEGMENT);
-				SET_DI(DISKETTE_CONTROLLER_PARAMETER_TABLE2);
+				//SET_BX(0x0004);
+				//SET_ES(BIOS_SEGMENT);
+				//SET_DI(DISKETTE_CONTROLLER_PARAMETER_TABLE2);
 
 				SET_AX(0x00); // no error
 				SET_DISK_RET_STATUS(0x00);
@@ -1083,8 +1192,13 @@ void Application::Int(CPU::byte x)
 			}
 			else
 			{
-				SET_AH(0x01);
-				SET_CF(); // error
+				SET_AX(0);
+				SET_CX(0);
+				SET_DX(0);
+				SET_BX(0);
+				SET_ES(BIOS_SEGMENT);
+				SET_DI(DISKETTE_CONTROLLER_PARAMETER_TABLE2);
+				CLEAR_CF();
 			}
 			break;
 
@@ -1361,14 +1475,10 @@ void Application::Int(CPU::byte x)
 			*/
 			// TODO
 			{
-				auto now = std::chrono::system_clock::now();
-				std::chrono::duration<double> elapsed_seconds = now - start;
-				int ticks = int(elapsed_seconds.count() * 1193180 / 65536);
-				StoreW(0x0040, 0x006E, ticks & 0xFFFF);
-				StoreW(0x0040, 0x006E + 2, ticks >> 16);
+				int ticks = GetW(0x40, 0x6c) + GetW(0x40, 0x6e) * 0x10000;
 				SET_AL(0);
-				SET_CX(ticks >> 16);
-				SET_DX(ticks & 0xFFFF);
+				SET_CX(TIME_ZERO(ticks >> 16));
+				SET_DX(TIME_ZERO(ticks & 0xFFFF));
 			}
 			break;
 
@@ -1383,10 +1493,10 @@ void Application::Int(CPU::byte x)
 				DL = 1 if daylight savings time option*/
 				std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 				auto tm = std::localtime(&now);
-				SET_CH(decToBcd(tm->tm_hour));
-				SET_CL(decToBcd(tm->tm_min));
-				SET_DH(decToBcd(tm->tm_sec));
-				SET_DL(tm->tm_isdst);
+				SET_CH(TIME_ZERO(decToBcd(tm->tm_hour)));
+				SET_CL(TIME_ZERO(decToBcd(tm->tm_min)));
+				SET_DH(TIME_ZERO(decToBcd(tm->tm_sec)));
+				SET_DL(TIME_ZERO(tm->tm_isdst));
 				CLEAR_CF();
 				break;
 			}
@@ -1405,10 +1515,10 @@ void Application::Int(CPU::byte x)
 			{
 				std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 				auto tm = std::localtime(&now);
-				SET_CH(decToBcd((tm->tm_year + 1900) / 100));
-				SET_CL(decToBcd(tm->tm_year % 100));
-				SET_DH(decToBcd(tm->tm_mon + 1));
-				SET_DL(tm->tm_mday);
+				SET_CH(TIME_ZERO(decToBcd((tm->tm_year + 1900) / 100)));
+				SET_CL(TIME_ZERO(decToBcd(tm->tm_year % 100)));
+				SET_DH(TIME_ZERO(decToBcd(tm->tm_mon + 1)));
+				SET_DL(TIME_ZERO(tm->tm_mday));
 				CLEAR_CF();
 				break;
 			}
@@ -1421,7 +1531,7 @@ void Application::Int(CPU::byte x)
 				CX = count of days since 1-1-1980n*/
 				std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 				int days = now / 3600 / 24 - 10 * 365 - 2;
-				SET_CX(days);
+				SET_CX(TIME_ZERO(days));
 				CLEAR_CF();
 				break;
 			}

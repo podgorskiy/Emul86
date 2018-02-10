@@ -24,6 +24,10 @@ public:
 	{
 		m_currentKeyCode = 0;
 	}
+	void SetCurrentScanCode(int c)
+	{
+		m_currentKeyCode = c;
+	}
 	void SetKeyFlags(bool rightShift, bool leftShift, bool CTRL, bool alt)
 	{
 		/*

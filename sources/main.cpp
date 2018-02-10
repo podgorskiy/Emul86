@@ -398,6 +398,14 @@ int main(int argc, char **argv)
 					if (app->KeyCallback(keyBuffer.front()))
 					{
 						keyBuffer.pop_front();
+						if (keyBuffer.size() != 0)
+						{
+							app->SetCurrentScanCode(keyBuffer.front());
+						}
+						else
+						{
+							app->ClearCurrentCode();
+						}
 						app->PopKey();
 					}
 				}
