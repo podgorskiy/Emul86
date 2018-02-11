@@ -238,6 +238,12 @@ private:
 
 	template<typename T>
 	void MOV_reg_imm();
+	
+	template<typename T>
+	void MOV_a_off();
+
+	template<typename T>
+	void MOV_off_a();
 
 	template<typename T>
 	void LODS();
@@ -280,6 +286,24 @@ private:
 	void IDIV();
 
 	template<typename T>
+	void IN_imm();
+
+	template<typename T>
+	void IN_dx();
+
+	template<typename T>
+	void OUT_imm();
+
+	template<typename T>
+	void OUT_dx();
+
+	template<typename T>
+	void INS();
+
+	template<typename T>
+	void OUTS();
+
+	template<typename T>
 	void Group1();
 
 	template<typename T>
@@ -290,6 +314,8 @@ private:
 
 	template<typename T>
 	void Group45();
+
+	void Group0F();
 
 	template<typename T>
 	const char* GetRegName(int i);

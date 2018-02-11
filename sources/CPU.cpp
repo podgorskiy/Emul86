@@ -53,6 +53,12 @@ dbg_args_ptr = n2hexstr(dbg_args_ptr, X, N)
 #define APPEND_DBG_SEG(X)
 #endif 
 
+#define APPEND_DBG_JMP_DST \
+	APPEND_HEX_DBG(m_segments[CS]); \
+	APPEND_DBG(":"); \
+	APPEND_HEX_DBG(IP); \
+	break;
+
 #define CJMP \
 {\
 	sbyte rel8 = GetImm<byte>(); \
@@ -667,6 +673,47 @@ void CPU::MOV_reg_imm()
 	APPEND_HEX_DBG(data);
 }
 
+template<typename T>
+void CPU::MOV_a_off()
+{
+	CMD_NAME("MOV");
+	APPEND_DBG_REGT(0, T);
+	APPEND_DBG(", [");
+	byte src_offsetreg = DS;
+	if (m_segmentOverride != NONE)
+	{
+		src_offsetreg = m_segmentOverride;
+	}
+	word src_seg = GetSegment(src_offsetreg);
+	word src_offset = GetImm<word>();
+	APPEND_DBG_SEG(src_offsetreg);
+	APPEND_DBG(":");
+	APPEND_HEX_DBG(src_offset);
+	APPEND_DBG("]");
+	OPERAND_A = m_io.Memory<T>(select(src_seg, src_offset));
+	SetRegister<T>(0, OPERAND_A);
+}
+
+template<typename T>
+void CPU::MOV_off_a()
+{
+	CMD_NAME("MOV");
+	APPEND_DBG("[");
+	byte dst_offsetreg = DS;
+	if (m_segmentOverride != NONE)
+	{
+		dst_offsetreg = m_segmentOverride;
+	}
+	word dst_seg = GetSegment(dst_offsetreg);
+	word dst_offset = GetImm<word>();
+	APPEND_DBG_SEG(dst_offsetreg);
+	APPEND_DBG(":");
+	APPEND_HEX_DBG(dst_offset);
+	APPEND_DBG("], ");
+	APPEND_DBG_REGT(0, T);
+	m_io.Memory<T>(select(dst_seg, dst_offset)) = GetRegister<T>(0);
+}
+
 template<>
 void CPU::MUL<byte>()
 {
@@ -1130,6 +1177,99 @@ void CPU::MOVS()
 }
 
 
+template<typename T>
+void CPU::IN_imm()
+{
+	CMD_NAME("IN");
+	ADDRESS = GetImm<byte>();
+	SetRegister<T>(0, m_io.Port<T>(ADDRESS));
+}
+
+
+template<typename T>
+void CPU::IN_dx()
+{
+	CMD_NAME("IN");
+	APPEND_DBG_REGW(DX);
+	ADDRESS = GetRegister<word>(DX);
+	APPEND_DBG_REGT(0, T);
+	SetRegister<T>(0, m_io.Port<T>(ADDRESS));
+}
+
+
+template<typename T>
+void CPU::OUT_imm()
+{
+	CMD_NAME("OUT");
+	ADDRESS = GetImm<byte>();
+	APPEND_DBG_REGB(0);
+	m_io.Port<T>(ADDRESS) = GetRegister<T>(AL);
+}
+
+
+template<typename T>
+void CPU::OUT_dx()
+{
+	CMD_NAME("OUT");
+	ADDRESS = GetRegister<word>(DX);
+	APPEND_DBG_REGW(DX);
+	APPEND_DBG_REGT(0, T);
+	m_io.Port<T>(ADDRESS) = GetRegister<T>(0);
+}
+
+template<typename T>
+void CPU::INS()
+{
+	CMD_NAME("INS");
+	int times = 1;
+	if (m_REP)
+	{
+		times = m_registers[CX];
+	}
+	for (int i = 0; i < times; ++i)
+	{
+		m_io.Memory<T>(select(GetSegment(ES), GetRegister<word>(DI))) = m_io.Port<T>(GetRegister<word>(DX));
+
+		m_registers[SI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
+		m_registers[DI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
+
+		if (m_REP)
+		{
+			m_registers[CX]--;
+		}
+	}
+}
+
+
+template<typename T>
+void CPU::OUTS()
+{
+	CMD_NAME("OUTS");
+	int times = 1;
+	if (m_REP)
+	{
+		times = m_registers[CX];
+	}
+	for (int i = 0; i < times; ++i)
+	{
+		byte offsetreg = DS;
+		if (m_segmentOverride != NONE)
+		{
+			offsetreg = m_segmentOverride;
+		}
+		m_io.Port<T>(GetRegister<word>(DX)) = m_io.Memory<T>(select(GetSegment(offsetreg), GetRegister<word>(SI)));
+
+		m_registers[SI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
+		m_registers[DI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
+
+		if (m_REP)
+		{
+			m_registers[CX]--;
+		}
+	}
+}
+
+
 void CPU::Step()
 {
 #ifdef _DEBUG
@@ -1160,6 +1300,7 @@ void CPU::Step()
 	byte reg = 0;
 	bool condition = false;
 	word MSB_MASK = 0;
+	int16_t offset = 0;
 	int times = 1;
 
 	m_segmentOverride = NONE;
@@ -1252,12 +1393,117 @@ opcode:
 	case 0x05 + 0x38: PrepareOperands_AXL_IMM<word>(); CMP<word>(); break;
 
 	case 0x06: CMD_NAME("PUSH ES"); Push(m_segments[ES]); break;
-	case 0x16: CMD_NAME("PUSH SS"); Push(m_segments[SS]); break;
 	case 0x07: CMD_NAME("POP ES"); m_segments[ES] = Pop(); break;
-	case 0x17: CMD_NAME("POP SS"); m_segments[SS] = Pop(); break;
 	case 0x0E: CMD_NAME("PUSH CS"); Push(m_segments[CS]); break;
+	case 0x0F: Group0F(); break;
+	case 0x16: CMD_NAME("PUSH SS"); Push(m_segments[SS]); break;
+	case 0x17: CMD_NAME("POP SS"); m_segments[SS] = Pop(); break;
 	case 0x1E: CMD_NAME("PUSH DS"); Push(m_segments[DS]); break;
 	case 0x1F: CMD_NAME("POP DS"); m_segments[DS] = Pop(); break;
+
+	case 0x27:
+		CMD_NAME("DAA");
+		{
+			int tempL = GetRegister<byte>(AL);
+			int tempH = GetRegister<byte>(AH);
+			bool oldCF = TestFlag<CF>();
+			if (((tempL & 0x0F) > 9) || TestFlag<AF>())
+			{
+				SetRegister<byte>(AL, tempL + 6);
+				SetFlag<AF>();
+				SetFlag<CF>(TestFlag<CF>() || (0x100 & (tempL + 6)));
+			}
+			else
+			{
+				ClearFlag<AF>();
+			}
+			if (tempL > 0x99 || oldCF)
+			{
+				SetRegister<byte>(AL, GetRegister<byte>(AL) + 0x60);
+				SetFlag<CF>();
+			}
+			else
+			{
+				ClearFlag<CF>();
+			}
+			RESULT = GetRegister<byte>(AL);
+			UpdateFlags_SFZFPF<byte>();
+		}
+		break;
+
+	case 0x2F:
+		CMD_NAME("DAS");
+		{
+			int tempL = GetRegister<byte>(AL);
+			int tempH = GetRegister<byte>(AH);
+			bool oldCF = TestFlag<CF>();
+			if (((tempL & 0x0F) > 9) || TestFlag<AF>())
+			{
+				SetRegister<byte>(AL, tempL - 6);
+				SetFlag<AF>();
+				SetFlag<CF>(TestFlag<CF>() || (0x100 & (tempL - 6)));
+			}
+			else
+			{
+				ClearFlag<AF>();
+			}
+			if (tempL > 0x99 || oldCF)
+			{
+				SetRegister<byte>(AL, GetRegister<byte>(AL) - 0x60);
+				SetFlag<CF>();
+			}
+			else
+			{
+				ClearFlag<CF>();
+			}
+			RESULT = GetRegister<byte>(AL);
+			UpdateFlags_SFZFPF<byte>();
+		}
+		break;
+
+	case 0x37:
+		CMD_NAME("AAA");
+		{
+			int tempL = GetRegister<byte>(AL);
+			int tempH = GetRegister<byte>(AH);
+			if (((tempL & 0x0F) > 9) || TestFlag<AF>())
+			{
+				SetRegister<byte>(AL, tempL + 6);
+				SetRegister<byte>(AH, tempH + 1);
+				SetFlag<AF>();
+				SetFlag<CF>();
+			}
+			else
+			{
+				ClearFlag<AF>();
+				ClearFlag<CF>();
+			}
+			tempL = GetRegister<byte>(AL);
+			SetRegister<byte>(AL, tempL & 0xF);
+		}
+		break;
+
+	case 0x3F:
+		CMD_NAME("AAS");
+		{
+			int tempL = GetRegister<byte>(AL);
+			int tempH = GetRegister<byte>(AH);
+			if (((tempL & 0x0F) > 9) || TestFlag<AF>())
+			{
+				SetRegister<byte>(AL, tempL - 6);
+				SetRegister<byte>(AH, tempH - 1);
+				SetFlag<AF>();
+				SetFlag<CF>();
+			}
+			else
+			{
+				ClearFlag<AF>();
+				ClearFlag<CF>();
+			}
+			tempL = GetRegister<byte>(AL);
+			SetRegister<byte>(AL, tempL & 0xF);
+		}
+		break;
 
 	case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x47:
 		CMD_NAME("INC");
@@ -1377,98 +1623,11 @@ opcode:
 		SetFlag<CF>(RESULT != 0 && RESULT != 0xFFFF8000);
 		break;
 
-	case 0x6C:
-		CMD_NAME("INS");
-
-		if (m_REP)
-		{
-			times = m_registers[CX];
-		}
-		for (int i = 0; i < times; ++i)
-		{
-			m_io.Memory<byte>(select(GetSegment(ES), GetRegister<word>(DI))) = m_io.Port<byte>(GetRegister<word>(DX));
-
-			m_registers[SI] += TestFlag<DF>() == 0 ? 1 : -1;
-			m_registers[DI] += TestFlag<DF>() == 0 ? 1 : -1;
-
-			if (m_REP)
-			{
-				m_registers[CX]--;
-			}
-		}
-		break;
-
-	case 0x6D:
-		CMD_NAME("INS");
-		if (m_REP)
-		{
-			times = m_registers[CX];
-		}
-		for (int i = 0; i < times; ++i)
-		{
-			m_io.Memory<word>(select(GetSegment(ES), GetRegister<word>(DI))) = m_io.Port<word>(GetRegister<word>(DX));
-			m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
-			m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
-
-			if (m_REP)
-			{
-				m_registers[CX]--;
-			}
-		}
-		break;
-
-	case 0x6E:
-		CMD_NAME("OUTS");
-
-		if (m_REP)
-		{
-			times = m_registers[CX];
-		}
-		for (int i = 0; i < times; ++i)
-		{
-			byte offsetreg = DS;
-			if (m_segmentOverride != NONE)
-			{
-				offsetreg = m_segmentOverride;
-			}
-			m_io.Port<byte>(GetRegister<word>(DX)) = m_io.Memory<byte>(select(GetSegment(offsetreg), GetRegister<word>(SI)));
-
-			m_registers[SI] += TestFlag<DF>() == 0 ? 1 : -1;
-			m_registers[DI] += TestFlag<DF>() == 0 ? 1 : -1;
-
-			if (m_REP)
-			{
-				m_registers[CX]--;
-			}
-		}
-		break;
-
-	case 0x6F:
-		CMD_NAME("OUTS");
-
-		if (m_REP)
-		{
-			times = m_registers[CX];
-		}
-		for (int i = 0; i < times; ++i)
-		{
-			byte offsetreg = DS;
-			if (m_segmentOverride != NONE)
-			{
-				offsetreg = m_segmentOverride;
-			}
-			m_io.Port<word>(GetRegister<word>(DX)) = m_io.Memory<word>(select(GetSegment(offsetreg), GetRegister<word>(SI)));
-
-			m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
-			m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
-
-			if (m_REP)
-			{
-				m_registers[CX]--;
-			}
-		}
-		break;
-
+	case 0x6C: INS<byte>(); break;
+	case 0x6D: INS<word>(); break;
+	case 0x6E: OUTS<byte>(); break;
+	case 0x6F: OUTS<word>(); break;
+		
 	case 0x70: CMD_NAME("JO"); condition = TestFlag<OF>(); CJMP
 	case 0x71: CMD_NAME("JNO"); condition = !TestFlag<OF>(); CJMP
 	case 0x72: CMD_NAME("JB"); condition = TestFlag<CF>(); CJMP
@@ -1490,7 +1649,13 @@ opcode:
 	case 0x81: PrepareOperands_AXL_RM_IMM<word>(); Group1<word>(); break;
 	case 0x82: PrepareOperands_AXL_RM_IMM<byte>(); Group1<byte>(); break;
 	case 0x83: PrepareOperands_AXL_RM_IMM_signextend(); Group1<word>(); break;
-	
+
+	case 0x84: TEST_reg_rm<byte>(); break;
+	case 0x85: TEST_reg_rm<word>(); break;
+
+	case 0x86: XCHG<byte>(); break;
+	case 0x87: XCHG<word>(); break;
+
 	case 0x88: CMD_NAME("MOV"); PrepareOperands_RM_REG<byte>(); RESULT = OPERAND_B; StoreResult_RM<byte>(); break;
 	case 0x89: CMD_NAME("MOV"); PrepareOperands_RM_REG<word>(); RESULT = OPERAND_B; StoreResult_RM<word>(); break;
 	case 0x8A: CMD_NAME("MOV"); PrepareOperands_REG_RM<byte>(); RESULT = OPERAND_B; StoreResult_REG<byte>(); break;
@@ -1505,6 +1670,15 @@ opcode:
 		APPEND_DBG (m_segNames[seg]);
 		break;
 
+	case 0x8D:
+		CMD_NAME("LEA");
+		MODREGRM = GetImm<byte>();
+		GetRegister<word>();
+		APPEND_DBG(", ");
+		SetRM_Address();
+		SetRegister<word>(EFFECTIVE_ADDRESS);
+		break;
+
 	case 0x8E:
 		CMD_NAME("MOV");
 		MODREGRM = GetImm<byte>();
@@ -1514,70 +1688,33 @@ opcode:
 		m_segments[seg] = GetRM<word>();
 		break;
 
-	case 0xB0:case 0xB1:case 0xB2:case 0xB3:case 0xB4:case 0xB5:case 0xB6:case 0xB7: MOV_reg_imm<byte>(); break;
-	case 0xB8:case 0xB9:case 0xBA:case 0xBB:case 0xBC:case 0xBD:case 0xBE:case 0xBF: MOV_reg_imm<word>(); break;
-	
-	case 0xC6: MOV_rm_imm<byte>(); break;
-	case 0xC7: MOV_rm_imm<word>(); break;
-
-	case 0xCC: CMD_NAME("INT 3"); INT(3);break;
-	case 0xCD: CMD_NAME("INT"); data = GetImm<byte>(); APPEND_HEX_DBG(data); INT(data); break;
-	case 0xCE: CMD_NAME("INTO"); INT(4); break;
-
-	case 0xE2: LOOP(); break;
-	case 0xE1: LOOPZ();	break;
-	case 0xE0: LOOPNZ();  break;
-
-	case 0xF8: CMD_NAME("CLC"); ClearFlag<CF>(); break;
-	case 0xF9: CMD_NAME("STC"); SetFlag<CF>(); break;
-	case 0xFC: CMD_NAME("CLD"); ClearFlag<DF>(); break;
-	case 0xFD: CMD_NAME("STD"); SetFlag<DF>(); break;
-	case 0xFA: CMD_NAME("CLI"); ClearFlag<IF>(); break;
-	case 0xFB: CMD_NAME("STI"); SetFlag<IF>(); break;
-	case 0xF5: CMD_NAME("CMC"); SetFlag<CF>(!TestFlag<CF>()); break;
-
-
-	case 0xEA:
-		CMD_NAME("JMP");
-		{
-			word new_IP = GetImm<word>();
-			word new_CS = GetImm<word>();
-			IP = new_IP;
-			m_segments[CS] = new_CS;
-			APPEND_HEX_DBG(new_CS);
-			APPEND_DBG(":");
-			APPEND_HEX_DBG(new_IP);
-		}
+	case 0x8F:
+		CMD_NAME("POP");
+		MODREGRM = GetImm<byte>();
+		SetRM<word>(Pop(), true);
 		break;
-	case 0xEB:
-		CMD_NAME("JMP");
-		IP += (sbyte)GetImm<byte>();
-		APPEND_HEX_DBG(m_segments[CS]);
-		APPEND_DBG(":");
-		APPEND_HEX_DBG(IP);
+
+	case 0x90: case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x96: case 0x97:
+		CMD_NAME("XCHG");
+		OPERAND_A = GetRegister<word>(OPCODE1 & 0x07);
+		APPEND_DBG_REGW((OPCODE1 & 0x07));
+		APPEND_DBG(", ");
+		OPERAND_B = GetRegister<word>(0);
+		APPEND_DBG_REGW(0);
+		SetRegister<word>(OPCODE1 & 0x07, OPERAND_B);
+		SetRegister<word>(0, OPERAND_A);
 		break;
-	case 0xE9:
-		CMD_NAME("JMP");
-		IP += GetImm<word>();
-		APPEND_HEX_DBG(m_segments[CS]);
-		APPEND_DBG(":");
-		APPEND_HEX_DBG(IP);
+
+	case 0x98:
+		CMD_NAME("CBW");
+		OPERAND_A = (sbyte)GetRegister<byte>(0);
+		SetRegister<word>(0, OPERAND_A);
 		break;
-	case 0xE3:
-		CMD_NAME("JCXZ");
-		condition = m_registers[CX] == 0; 
-		CJMP
-		break;
-	case 0xE8:
-		CMD_NAME("CALL");
-		{
-			int16_t offset = GetImm<word>();
-			Push(IP);
-			IP += offset;
-			APPEND_HEX_DBG(m_segments[CS]);
-			APPEND_DBG(":");
-			APPEND_HEX_DBG(IP);
-		}
+
+	case 0x99:
+		CMD_NAME("CWD");
+		OPERAND_A = GetRegister<word>(0);
+		SetRegister<word>(DX, ((OPERAND_A & 0x8000) != 0) * 0xFFFF);
 		break;
 
 	case 0x9A:
@@ -1595,101 +1732,6 @@ opcode:
 		}
 		break;
 
-		/*
-	case 0xE4: case 0xE5:
-		CMD_NAME("IN");
-		ADDRESS_METHOD = OPCODE1 & 1;
-		ADDRESS = GetImm<byte>();
-		if (Byte())
-		{
-			SetReg(0, m_io.Port<byte>(ADDRESS));
-		}
-		else
-		{
-			SetReg(0, m_io.Port<word>(ADDRESS));
-		}
-		break;
-
-	case 0xE6: case 0xE7:
-		CMD_NAME("OUT");
-		ADDRESS_METHOD = OPCODE1 & 1;
-		ADDRESS = GetImm<byte>();
-		if (Byte())
-		{
-			APPEND_DBG_REGB(0);
-			m_io.Port<byte>(ADDRESS) = GetRegister<byte>(AL);
-		}
-		else
-		{
-			APPEND_DBG_REGW(0);
-			m_io.Port<word>(ADDRESS) = GetRegister<word>(AX);
-		}
-		break;
-
-	case 0xEC: case 0xED:
-		CMD_NAME("IN");
-		ADDRESS_METHOD = OPCODE1 & 1;
-		APPEND_DBG_REGW(DX);
-		ADDRESS = GetRegister<word>(DX);
-		if (Byte())
-		{
-			APPEND_DBG_REGB(0);
-			SetRegister<byte>(0, m_io.Port<byte>(ADDRESS));
-		}
-		else
-		{
-			APPEND_DBG_REGW(0);
-			SetRegister<word>(0, m_io.Port<word>(ADDRESS));
-		}
-		break;
-
-	case 0xEE: case 0xEF:
-		CMD_NAME("OUT");
-		ADDRESS_METHOD = OPCODE1 & 1;
-		ADDRESS = GetRegister<word>(DX);
-		APPEND_DBG_REGW(DX);
-		if (Byte())
-		{
-			APPEND_DBG_REGB(0);
-			m_io.Port<byte>(ADDRESS) = GetRegister<byte>(0);
-		}
-		else
-		{
-			APPEND_DBG_REGW(0);
-			m_io.Port<word>(ADDRESS) = GetRegister<word>(0);
-		}
-		break;
-		*/
-
-
-	case 0xFE: Group45<byte>(); break;
-	case 0xFF: Group45<word>(); break;
-	
-	case 0x98:
-		CMD_NAME("CBW");
-		OPERAND_A = (sbyte)GetRegister<byte>(0);
-		SetRegister<word>(0, OPERAND_A);
-		break;
-
-	case 0x99:
-		CMD_NAME("CWD");
-		OPERAND_A = GetRegister<word>(0);
-		SetRegister<word>(DX, ((OPERAND_A & 0x8000) != 0) * 0xFFFF);
-		break;
-
-
-	case 0x90: case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x96: case 0x97:
-		CMD_NAME("XCHG");
-		OPERAND_A = GetRegister<word>(OPCODE1 & 0x07);
-		APPEND_DBG_REGW((OPCODE1 & 0x07));
-		APPEND_DBG(", ");
-		OPERAND_B = GetRegister<word>(0);
-		APPEND_DBG_REGW(0);
-		SetRegister<word>(OPCODE1 & 0x07, OPERAND_B);
-		SetRegister<word>(0, OPERAND_A);
-		break;
-
-
 	case 0x9C:
 		CMD_NAME("PUSHF");
 		Push(m_flags);
@@ -1700,89 +1742,29 @@ opcode:
 		m_flags = Pop() | 0x2;
 		break;
 
-	case 0x0F:
-		OPCODE2 = GetImm<byte>();
-		switch (OPCODE2)
+	case 0x9E:
+		CMD_NAME("SAHF");
 		{
-		case 0x87:
-			CMD_NAME("JA"); condition = !TestFlag<CF>() && !TestFlag<ZF>(); CJMP16
-		case 0x83:
-			CMD_NAME("JAE"); condition = !TestFlag<CF>(); CJMP16
-		case 0x82:
-			CMD_NAME("JB"); condition = TestFlag<CF>(); CJMP16
-		case 0x86:
-			CMD_NAME("JBE"); condition = TestFlag<CF>() || TestFlag<ZF>(); CJMP16
-		case 0x84:
-			CMD_NAME("JZ"); condition = TestFlag<ZF>(); CJMP16
-		case 0x8F:
-			CMD_NAME("JG"); condition = !TestFlag<ZF>() && (TestFlag<SF>() == TestFlag<OF>()); CJMP16
-		case 0x8D:
-			CMD_NAME("JGE"); condition = (TestFlag<SF>() == TestFlag<OF>()); CJMP16
-		case 0x8C:
-			CMD_NAME("JL"); condition = (TestFlag<SF>() != TestFlag<OF>()); CJMP16
-		case 0x8E:
-			CMD_NAME("JLE"); condition = TestFlag<ZF>() || (TestFlag<SF>() != TestFlag<OF>()); CJMP16
-		case 0x85:
-			CMD_NAME("JNE"); condition = !TestFlag<ZF>(); CJMP16
-		case 0x81:
-			CMD_NAME("JNO"); condition = !TestFlag<OF>(); CJMP16
-		case 0x8B:
-			CMD_NAME("JNP"); condition = !TestFlag<PF>(); CJMP16
-		case 0x89:
-			CMD_NAME("JNS"); condition = !TestFlag<SF>(); CJMP16
-		case 0x80:
-			CMD_NAME("JO"); condition = TestFlag<OF>(); CJMP16
-		case 0x8A:
-			CMD_NAME("JP"); condition = TestFlag<PF>(); CJMP16
-		case 0x88:
-			CMD_NAME("JS"); condition = TestFlag<SF>(); CJMP16
-
-		case 0xAC:
-			CMD_NAME("SHRD");
-			MODREGRM = GetImm<byte>();
-			OPCODE2 = (MODREGRM & REG) >> 3;
-
-			times = GetImm<byte>();
-			OPERAND_A = GetRM<word>() | GetRegister<word>((MODREGRM & REG) >> 3) * 0x10000;
-			RESULT = OPERAND_A;
-
-			for (int i = 0; i < times; ++i)
-			{
-				SetFlag<CF>(1 & RESULT);
-				RESULT = RESULT / 2;
-				SetFlag<OF>((MSB_MASK & OPERAND_A) != 0);
-				UpdateFlags_SFZFPF<word>();
-				ClearFlag<AF>();
-			}
-			SetRM<word>(RESULT);
-			break;
-
-		default:
-			UNKNOWN_OPCODE(OPCODE2);
+			byte mask = 0x80 | 0x40 | 0x10 | 0x04 | 0x01;
+			m_flags = (m_flags & 0xFF00) | (GetRegister<byte>(AH) & mask) | 0x2;
 		}
 		break;
 
-	case 0x8F:
-		CMD_NAME("POP");
-		MODREGRM = GetImm<byte>();
-		SetRM<word>(Pop(), true);
+	case 0x9F:
+		CMD_NAME("LAHF");
+		SetRegister<byte>(AH, (m_flags & 0xFF) | 0x02);
 		break;
 
-	case 0xF6: Group3<byte>(); break;
-	case 0xF7: Group3<word>(); break;
-
-	case 0x84: TEST_reg_rm<byte>(); break;
-	case 0x85: TEST_reg_rm<word>(); break;
+	case 0xA0: MOV_a_off<byte>(); break;
+	case 0xA1: MOV_a_off<word>(); break;
+	case 0xA2: MOV_off_a<byte>(); break;
+	case 0xA3: MOV_off_a<word>(); break;
+	case 0xA4: MOVS<byte>(); break;
+	case 0xA5: MOVS<word>(); break;
+	case 0xA6: CMPS<byte>(); break;
+	case 0xA7: CMPS<word>(); break;
 	case 0xA8: TEST_a_imm<byte>(); break;
 	case 0xA9: TEST_a_imm<word>(); break;
-
-	case 0xD0: MODREGRM = GetImm<byte>(); Group2<byte>(1); break;
-	case 0xD1: MODREGRM = GetImm<byte>(); Group2<word>(1); break;
-	case 0xD2: MODREGRM = GetImm<byte>(); Group2<byte>(GetRegister<byte>(CL)); break;
-	case 0xD3: MODREGRM = GetImm<byte>(); Group2<word>(GetRegister<byte>(CL)); break;
-	case 0xC0: MODREGRM = GetImm<byte>(); times = GetImm<byte>(); Group2<byte>(times); break;
-	case 0xC1: MODREGRM = GetImm<byte>(); times = GetImm<byte>(); Group2<word>(times); break;
-
 	case 0xAA: STOS<byte>(); break;
 	case 0xAB: STOS<word>(); break;
 	case 0xAC: LODS<byte>(); break;
@@ -1790,23 +1772,13 @@ opcode:
 	case 0xAE: SCAS<byte>(); break;
 	case 0xAF: SCAS<word>(); break;
 
+	case 0xB0:case 0xB1:case 0xB2:case 0xB3:case 0xB4:case 0xB5:case 0xB6:case 0xB7: MOV_reg_imm<byte>(); break;
+	case 0xB8:case 0xB9:case 0xBA:case 0xBB:case 0xBC:case 0xBD:case 0xBE:case 0xBF: MOV_reg_imm<word>(); break;
+
+	case 0xC0: MODREGRM = GetImm<byte>(); times = GetImm<byte>(); Group2<byte>(times); break;
+	case 0xC1: MODREGRM = GetImm<byte>(); times = GetImm<byte>(); Group2<word>(times); break;
 	case 0xC2: CMD_NAME("RET"); IP = Pop(); m_registers[SP] += GetImm<word>(); break;
 	case 0xC3: CMD_NAME("RET"); IP = Pop(); break;
-	case 0xCA: CMD_NAME("RET"); IP = Pop(); m_segments[CS] = Pop(); m_registers[SP] += GetImm<word>(); break;
-	case 0xCB: CMD_NAME("RET"); IP = Pop(); m_segments[CS] = Pop(); break;
-	case 0xCF: CMD_NAME("IRET"); IP = Pop(); m_segments[CS] = Pop(); m_flags = Pop() | 0x2; break;
-
-	case 0xC5:
-		CMD_NAME("LDS");
-		MODREGRM = GetImm<byte>();
-		GetRegister<word>();
-		APPEND_DBG(", ");
-		SetRM_Address();
-		OPERAND_A = m_io.Memory<word>(ADDRESS);
-		OPERAND_B = m_io.Memory<word>(ADDRESS + 2);
-		SetRegister<word>(OPERAND_A);
-		SetSegment(DS, OPERAND_B);
-		break;
 
 	case 0xC4:
 		CMD_NAME("LES");
@@ -1820,292 +1792,140 @@ opcode:
 		SetSegment(ES, OPERAND_B);
 		break;
 
-	case 0x8D:
-		CMD_NAME("LEA");
+	case 0xC5:
+		CMD_NAME("LDS");
 		MODREGRM = GetImm<byte>();
 		GetRegister<word>();
 		APPEND_DBG(", ");
 		SetRM_Address();
-		SetRegister<word>(EFFECTIVE_ADDRESS);
+		OPERAND_A = m_io.Memory<word>(ADDRESS);
+		OPERAND_B = m_io.Memory<word>(ADDRESS + 2);
+		SetRegister<word>(OPERAND_A);
+		SetSegment(DS, OPERAND_B);
 		break;
 
-	case 0xA4: MOVS<byte>(); break;
-	case 0xA5: MOVS<byte>(); break;
+	case 0xC6: MOV_rm_imm<byte>(); break;
+	case 0xC7: MOV_rm_imm<word>(); break;
 
-	/*
+	case 0xC8:
+	{
+		CMD_NAME("ENTER");
+		word imm16 = GetImm<word>();
+		byte level = GetImm<byte>();
+		level &= 0x1F;
 
-		case 0xA0: case 0xA1:
+		word bp = GetRegister<word>(BP);
+
+		Push(bp);
+		word frame_ptr16 = GetRegister<word>(SP);
+
+		if (level > 0)
 		{
-			ADDRESS_METHOD = OPCODE1 & 1;
-			CMD_NAME("MOV");
-			APPEND_DBG(OPCODE1 & 1 ? "AX" : "AL");
-			APPEND_DBG(", [");
+			while (--level)
+			{
+				bp -= 2;
+				word temp16 = m_io.Memory<word>(select(GetSegment(SS), bp));
+				Push(temp16);
+			}
 
-			byte src_offsetreg = DS;
+			Push(frame_ptr16);
+		}
+
+		SetRegister<word>(BP, frame_ptr16 + 0);
+		SetRegister<word>(SP, GetRegister<word>(SP) - imm16);
+	}
+	break;
+
+	case 0xC9:
+	{
+		CMD_NAME("LEAVE");
+		word bp = GetRegister<word>(BP);
+		word value = m_io.Memory<word>(select(GetSegment(SS), bp));
+		SetRegister<word>((byte)SP, bp + 2);
+		SetRegister<word>(BP, value + 0);
+	}
+	break;
+
+	case 0xCA: CMD_NAME("RET"); IP = Pop(); m_segments[CS] = Pop(); m_registers[SP] += GetImm<word>(); break;
+	case 0xCB: CMD_NAME("RET"); IP = Pop(); m_segments[CS] = Pop(); break;
+	case 0xCC: CMD_NAME("INT 3"); INT(3);break;
+	case 0xCD: CMD_NAME("INT"); data = GetImm<byte>(); APPEND_HEX_DBG(data); INT(data); break;
+	case 0xCE: CMD_NAME("INTO"); INT(4); break;
+	case 0xCF: CMD_NAME("IRET"); IP = Pop(); m_segments[CS] = Pop(); m_flags = Pop() | 0x2; break;
+
+	case 0xD0: MODREGRM = GetImm<byte>(); Group2<byte>(1); break;
+	case 0xD1: MODREGRM = GetImm<byte>(); Group2<word>(1); break;
+	case 0xD2: MODREGRM = GetImm<byte>(); Group2<byte>(GetRegister<byte>(CL)); break;
+	case 0xD3: MODREGRM = GetImm<byte>(); Group2<word>(GetRegister<byte>(CL)); break;
+
+	case 0xD4:
+		CMD_NAME("AAM");
+		{
+			unsigned int tempL = GetRegister<byte>(AL);
+			unsigned int imm8 = GetImm<byte>();
+			SetRegister<byte>(AH, tempL / imm8);
+			SetRegister<byte>(AL, tempL % imm8);
+			RESULT = GetRegister<byte>(AL);
+			UpdateFlags_SFZFPF<byte>();
+		}
+		break;
+
+	case 0xD5:
+		CMD_NAME("AAD");
+		{
+			int tempL = GetRegister<byte>(AL);
+			int tempH = GetRegister<byte>(AH);
+			SetRegister<byte>(AL, tempL + (tempH * GetImm<byte>()));
+			SetRegister<byte>(AH, 0);
+			RESULT = GetRegister<byte>(AL);
+			UpdateFlags_SFZFPF<byte>();
+		}
+		break;
+
+	case 0xD7:
+		CMD_NAME("XLAT");
+		{
+			byte offsetreg = DS;
 			if (m_segmentOverride != NONE)
 			{
-				src_offsetreg = m_segmentOverride;
+				offsetreg = m_segmentOverride;
 			}
-			word src_seg = GetSegment(src_offsetreg);
-			word src_offset = GetImm<word>();
-			APPEND_DBG_SEG(src_offsetreg);
-			APPEND_DBG(":");
-			APPEND_HEX_DBG(src_offset);
-			APPEND_DBG("]");
-			if (OPCODE1 & 1)
-			{
-				OPERAND_A = m_io.Memory<word>(select(src_seg, src_offset));
-				SetReg(AX, OPERAND_A);
-			}
-			else
-			{
-				OPERAND_A = m_io.Memory<byte>(select(src_seg, src_offset));
-				SetReg(AL, OPERAND_A);
-			}
+			word seg = GetSegment(offsetreg);
+			SetRegister<byte>(AL, m_io.Memory<byte>(select(seg, GetRegister<word>(BX) + word(GetRegister<byte>(AL)))));
 		}
 		break;
 
-		case 0xA2: case 0xA3:
-		{
-			ADDRESS_METHOD = OPCODE1 & 1;
-			CMD_NAME("MOV");
-			APPEND_DBG("[");
-			byte dst_offsetreg = DS;
-			if (m_segmentOverride != NONE)
-			{
-				dst_offsetreg = m_segmentOverride;
-			}
-			word dst_seg = GetSegment(dst_offsetreg);
-			word dst_offset = GetImm<word>();
-			APPEND_DBG_SEG(dst_offsetreg);
-			APPEND_DBG(":");
-			APPEND_HEX_DBG(dst_offset);
-			APPEND_DBG("], ");
+	case 0xD8: case 0xD9: case 0xDA: case 0xDB: case 0xDC: case 0xDD: case 0xDE: case 0xDF: GetImm<byte>();	break;
 
-			APPEND_DBG(OPCODE1 & 1 ? "AX" : "AL");
-
-			if (OPCODE1 & 1)
-			{
-				m_io.Memory<word>(select(dst_seg, dst_offset)) = GetReg(AX);
-			}
-			else
-			{
-				m_io.Memory<byte>(select(dst_seg, dst_offset)) = GetReg(AL) & 0xFF;
-			}
-		}
-		break;
-
-
-		*/
-
-		case 0x86: XCHG<byte>(); break;
-		case 0x87: XCHG<word>(); break;
-
-		case 0xA6: CMPS<byte>(); break;
-		case 0xA7: CMPS<word>(); break;
-
-		case 0x9E:
-			CMD_NAME("SAHF");
-			{
-				byte mask = 0x80 | 0x40 | 0x10 | 0x04 | 0x01;
-				m_flags = (m_flags & 0xFF00) | (GetRegister<byte>(AH) & mask) | 0x2;
-			}
-			break;
-
-		case 0x9F:
-			CMD_NAME("LAHF");
-			SetRegister<byte>(AH, (m_flags & 0xFF) | 0x02);
-			break;
-
-		case 0xD5:
-			CMD_NAME("AAD");
-			{
-				int tempL = GetRegister<byte>(AL);
-				int tempH = GetRegister<byte>(AH);
-				SetRegister<byte>(AL, tempL + (tempH * GetImm<byte>()));
-				SetRegister<byte>(AH, 0);
-				RESULT = GetRegister<byte>(AL);
-				UpdateFlags_SFZFPF<byte>();
-				break;
-			}
-
-		case 0xD4:
-			CMD_NAME("AAM");
-			{
-				unsigned int tempL = GetRegister<byte>(AL);
-				unsigned int imm8 = GetImm<byte>();
-				SetRegister<byte>(AH, tempL / imm8);
-				SetRegister<byte>(AL, tempL % imm8);
-				RESULT = GetRegister<byte>(AL);
-				UpdateFlags_SFZFPF<byte>();
-				break;
-			}
-
-		case 0x37:
-			CMD_NAME("AAA");
-			{
-				int tempL = GetRegister<byte>(AL);
-				int tempH = GetRegister<byte>(AH);
-				if (((tempL & 0x0F) > 9) || TestFlag<AF>())
-				{
-					SetRegister<byte>(AL, tempL + 6);
-					SetRegister<byte>(AH, tempH + 1);
-					SetFlag<AF>();
-					SetFlag<CF>();
-				}
-				else
-				{
-					ClearFlag<AF>();
-					ClearFlag<CF>();
-				}
-				tempL = GetRegister<byte>(AL);
-				SetRegister<byte>(AL, tempL & 0xF);
-			}
-			break;
-
-		case 0x3F:
-			CMD_NAME("AAS");
-			{
-				int tempL = GetRegister<byte>(AL);
-				int tempH = GetRegister<byte>(AH);
-				if (((tempL & 0x0F) > 9) || TestFlag<AF>())
-				{
-					SetRegister<byte>(AL, tempL - 6);
-					SetRegister<byte>(AH, tempH - 1);
-					SetFlag<AF>();
-					SetFlag<CF>();
-				}
-				else
-				{
-					ClearFlag<AF>();
-					ClearFlag<CF>();
-				}
-				tempL = GetRegister<byte>(AL);
-				SetRegister<byte>(AL, tempL & 0xF);
-			}
-			break;
-
-		case 0x27:
-			CMD_NAME("DAA");
-			{
-				int tempL = GetRegister<byte>(AL);
-				int tempH = GetRegister<byte>(AH);
-				bool oldCF = TestFlag<CF>();
-				if (((tempL & 0x0F) > 9) || TestFlag<AF>())
-				{
-					SetRegister<byte>(AL, tempL + 6);
-					SetFlag<AF>();
-					SetFlag<CF>(TestFlag<CF>() || (0x100 & (tempL + 6)));
-				}
-				else
-				{
-					ClearFlag<AF>();
-				}
-				if (tempL > 0x99 || oldCF)
-				{
-					SetRegister<byte>(AL, GetRegister<byte>(AL) + 0x60);
-					SetFlag<CF>();
-				}
-				else
-				{
-					ClearFlag<CF>();
-				}
-				RESULT = GetRegister<byte>(AL);
-				UpdateFlags_SFZFPF<byte>();
-			}
-			break;
-
-		case 0x2F:
-			CMD_NAME("DAS");
-			{
-				int tempL = GetRegister<byte>(AL);
-				int tempH = GetRegister<byte>(AH);
-				bool oldCF = TestFlag<CF>();
-				if (((tempL & 0x0F) > 9) || TestFlag<AF>())
-				{
-					SetRegister<byte>(AL, tempL - 6);
-					SetFlag<AF>();
-					SetFlag<CF>(TestFlag<CF>() || (0x100 & (tempL - 6)));
-				}
-				else
-				{
-					ClearFlag<AF>();
-				}
-				if (tempL > 0x99 || oldCF)
-				{
-					SetRegister<byte>(AL, GetRegister<byte>(AL) - 0x60);
-					SetFlag<CF>();
-				}
-				else
-				{
-					ClearFlag<CF>();
-				}
-				RESULT = GetRegister<byte>(AL);
-				UpdateFlags_SFZFPF<byte>();
-			}
-			break;
-
-		case 0xF4:
-			CMD_NAME("HLT");
-			ASSERT(false, "HALT!");
-			break;
-			
-		case 0xD7:
-			CMD_NAME("XLAT");
-			{
-				byte offsetreg = DS; 
-				if (m_segmentOverride != NONE)
-				{
-					offsetreg = m_segmentOverride;
-				}
-				word seg = GetSegment(offsetreg);
-				SetRegister<byte>(AL, m_io.Memory<byte>(select(seg, GetRegister<word>(BX) + word(GetRegister<byte>(AL)))));
-			}
-			break;
-
-		case 0xC8:
-		{
-			CMD_NAME("ENTER");
-			word imm16 = GetImm<word>();
-			byte level = GetImm<byte>();
-			level &= 0x1F;
-
-			word bp = GetRegister<word>(BP);
-
-			Push(bp);
-			word frame_ptr16 = GetRegister<word>(SP);
-
-			if (level > 0)
-			{
-				while (--level)
-				{
-					bp -= 2;
-					word temp16 = m_io.Memory<word>(select(GetSegment(SS), bp));
-					Push(temp16);
-				}
-
-				Push(frame_ptr16);
-			}
-
-			SetRegister<word>(BP, frame_ptr16 + 0);
-			SetRegister<word>(SP, GetRegister<word>(SP) - imm16);
-		}
-		break;
-
-		case 0xC9:
-		{
-			CMD_NAME("LEAVE");
-			word bp = GetRegister<word>(BP);
-			word value = m_io.Memory<word>(select(GetSegment(SS), bp));
-			SetRegister<word>((byte)SP, bp + 2);
-			SetRegister<word>(BP, value + 0);
-		}
-		break;
-
-		// escaping FPU commands
-		case 0xD8: case 0xD9: case 0xDA: case 0xDB: case 0xDC: case 0xDD: case 0xDE: case 0xDF:
-			GetImm<byte>();
-			break;
+	case 0xE0: LOOPNZ();  break;
+	case 0xE1: LOOPZ();	break;
+	case 0xE2: LOOP(); break;
+	case 0xE3: CMD_NAME("JCXZ"); condition = m_registers[CX] == 0; CJMP;
+	case 0xE4: IN_imm<byte>(); break;
+	case 0xE5: IN_imm<word>(); break;
+	case 0xE6: OUT_imm<byte>(); break;
+	case 0xE7: OUT_imm<word>(); break; 
+	case 0xE8: CMD_NAME("CALL"); offset = GetImm<word>(); Push(IP); IP += offset; APPEND_DBG_JMP_DST;
+	case 0xE9: CMD_NAME("JMP"); IP += GetImm<word>(); APPEND_DBG_JMP_DST;
+	case 0xEA: CMD_NAME("JMP"); { word new_IP = GetImm<word>(); word new_CS = GetImm<word>(); IP = new_IP; m_segments[CS] = new_CS; } APPEND_DBG_JMP_DST;
+	case 0xEB: CMD_NAME("JMP"); IP += (sbyte)GetImm<byte>(); APPEND_DBG_JMP_DST;
+	case 0xEC: IN_dx<byte>(); break;
+	case 0xED: IN_dx<word>(); break;
+	case 0xEE: OUT_dx<byte>(); break;
+	case 0xEF: OUT_dx<word>(); break;
+		
+	case 0xF4: CMD_NAME("HLT"); ASSERT(false, "HALT!"); break;
+	case 0xF5: CMD_NAME("CMC"); SetFlag<CF>(!TestFlag<CF>()); break;
+	case 0xF6: Group3<byte>(); break;
+	case 0xF7: Group3<word>(); break;
+	case 0xF8: CMD_NAME("CLC"); ClearFlag<CF>(); break;
+	case 0xF9: CMD_NAME("STC"); SetFlag<CF>(); break;
+	case 0xFA: CMD_NAME("CLI"); ClearFlag<IF>(); break;
+	case 0xFB: CMD_NAME("STI"); SetFlag<IF>(); break;
+	case 0xFC: CMD_NAME("CLD"); ClearFlag<DF>(); break;
+	case 0xFD: CMD_NAME("STD"); SetFlag<DF>(); break;
+	case 0xFE: Group45<byte>(); break;
+	case 0xFF: Group45<word>(); break;
 
 	default:
 		UNKNOWN_OPCODE(OPCODE1);
@@ -2364,6 +2184,73 @@ void CPU::Group45()
 		CMD_NAME("PUSH");
 		Push(OPERAND_A);
 		break;
+	default:
+		UNKNOWN_OPCODE(OPCODE2);
+	}
+}
+
+
+void CPU::Group0F()
+{
+	bool condition = false;
+
+	OPCODE2 = GetImm<byte>();
+	switch (OPCODE2)
+	{
+	case 0x87:
+		CMD_NAME("JA"); condition = !TestFlag<CF>() && !TestFlag<ZF>(); CJMP16
+	case 0x83:
+		CMD_NAME("JAE"); condition = !TestFlag<CF>(); CJMP16
+	case 0x82:
+		CMD_NAME("JB"); condition = TestFlag<CF>(); CJMP16
+	case 0x86:
+		CMD_NAME("JBE"); condition = TestFlag<CF>() || TestFlag<ZF>(); CJMP16
+	case 0x84:
+		CMD_NAME("JZ"); condition = TestFlag<ZF>(); CJMP16
+	case 0x8F:
+		CMD_NAME("JG"); condition = !TestFlag<ZF>() && (TestFlag<SF>() == TestFlag<OF>()); CJMP16
+	case 0x8D:
+		CMD_NAME("JGE"); condition = (TestFlag<SF>() == TestFlag<OF>()); CJMP16
+	case 0x8C:
+		CMD_NAME("JL"); condition = (TestFlag<SF>() != TestFlag<OF>()); CJMP16
+	case 0x8E:
+		CMD_NAME("JLE"); condition = TestFlag<ZF>() || (TestFlag<SF>() != TestFlag<OF>()); CJMP16
+	case 0x85:
+		CMD_NAME("JNE"); condition = !TestFlag<ZF>(); CJMP16
+	case 0x81:
+		CMD_NAME("JNO"); condition = !TestFlag<OF>(); CJMP16
+	case 0x8B:
+		CMD_NAME("JNP"); condition = !TestFlag<PF>(); CJMP16
+	case 0x89:
+		CMD_NAME("JNS"); condition = !TestFlag<SF>(); CJMP16
+	case 0x80:
+		CMD_NAME("JO"); condition = TestFlag<OF>(); CJMP16
+	case 0x8A:
+		CMD_NAME("JP"); condition = TestFlag<PF>(); CJMP16
+	case 0x88:
+		CMD_NAME("JS"); condition = TestFlag<SF>(); CJMP16
+
+	case 0xAC:
+		CMD_NAME("SHRD");
+		MODREGRM = GetImm<byte>();
+		OPCODE2 = (MODREGRM & REG) >> 3;
+		{
+			int times = GetImm<byte>();
+			OPERAND_A = GetRM<word>() | GetRegister<word>((MODREGRM & REG) >> 3) * 0x10000;
+			RESULT = OPERAND_A;
+
+			for (int i = 0; i < times; ++i)
+			{
+				SetFlag<CF>(1 & RESULT);
+				RESULT = RESULT / 2;
+				SetFlag<OF>((GetMSBMask<word>() & OPERAND_A) != 0);
+				UpdateFlags_SFZFPF<word>();
+				ClearFlag<AF>();
+			}
+			SetRM<word>(RESULT);
+		}
+		break;
+
 	default:
 		UNKNOWN_OPCODE(OPCODE2);
 	}
