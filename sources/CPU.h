@@ -1,66 +1,13 @@
 #pragma once
-#include <inttypes.h>
+#include "common.h"
+#include "io.h"
 #include <string>
 #include <imgui.h>
 
-template <typename I>
-inline std::string n2hexstr(I w, size_t hex_len = sizeof(I) << 1)
-{
-	static const char* digits = "0123456789ABCDEF";
-	std::string rc(hex_len, '0');
-	for (size_t i = 0, j = (hex_len - 1) * 4; i<hex_len; ++i, j -= 4)
-		rc[i] = digits[(w >> j) & 0x0f];
-	return rc;
-}
-
-template <typename I>
-inline char* n2hexstr(char* dst, I w, size_t hex_len = sizeof(I) << 1)
-{
-	static const char* digits = "0123456789ABCDEF";
-	memset(dst, '0', hex_len);
-	for (size_t i = 0, j = (hex_len - 1) * 4; i<hex_len; ++i, j -= 4)
-		dst[i] = digits[(w >> j) & 0x0f];
-	return &(*(dst + hex_len) = '\x0');
-}
-
-inline uint32_t select(uint16_t seg, uint16_t off)
-{
-	return (((uint32_t)seg) << 4) + off;
-}
-
-#ifdef _DEBUG
-#define APPEND_DBG(X) \
-dbg_args_ptr = strcpy(dbg_args_ptr, X) + strlen(X);
-#else
-#define APPEND_DBG(X)
-#endif
-
-#ifdef _DEBUG
-#define APPEND_HEX_DBG(X) \
-dbg_args_ptr = n2hexstr(dbg_args_ptr, X)
-#else
-#define APPEND_HEX_DBG(X)
-#endif
-
-#ifdef _DEBUG
-#define APPEND_HEXN_DBG(X,N) \
-dbg_args_ptr = n2hexstr(dbg_args_ptr, X, N)
-#else
-#define APPEND_HEXN_DBG(X, N)
-#endif
-
-#ifdef _DEBUG
-#define CMD_NAME(X) strcpy(dbg_cmd_name, X);
-#else
-#define CMD_NAME(X)
-#endif
 
 class CPU
 {
 public:
-	typedef uint16_t word;
-	typedef uint8_t byte;
-
 	class InterruptHandler
 	{
 	public:
@@ -94,13 +41,11 @@ public:
 		RESERVERD = 15
 	};
 
-	CPU();
+	CPU(IO& io);
 
 	void Step();
 
 	void GUI();
-
-	void SetRamPort(byte* ram, byte* port);
 
 	void SetInterruptHandler(InterruptHandler* interruptHandler);
 
@@ -121,31 +66,31 @@ public:
 	void INT(byte x);
 
 	template<Flags F>
-	inline bool TestFlag()
+	bool TestFlag()
 	{
 		return (m_flags & (1 << F)) != 0;
 	}
 
 	template<Flags F>
-	inline void SetFlag()
+	void SetFlag()
 	{
 		m_flags |= (1 << F);
 	}
 
 	template<Flags F>
-	inline void SetFlag(bool x)
+	void SetFlag(bool x)
 	{
 		m_flags = m_flags & ~(uint16_t)(1 << F) | (x ? (1 << F) : 0);
 	}
 
 	template<Flags F>
-	inline void SetFlag(uint32_t x)
+	void SetFlag(uint32_t x)
 	{
 		SetFlag<F>(x != 0);
 	}
 
 	template<Flags F>
-	inline void ClearFlag()
+	void ClearFlag()
 	{
 		m_flags &= ~(uint16_t)(1 << F);
 	}
@@ -157,11 +102,9 @@ public:
 	void Interrupt(int n);
 
 	word IP;
-
-	void EnableA20Gate();
-	void DisableA20Gate();
-	bool GetA20GateStatus();
-
+	
+	const char* GetDebugString();
+	const char* GetLastCommandAsm();
 private:
 	enum DataSize
 	{
@@ -186,67 +129,56 @@ private:
 		RM  = 0b00000111
 	};
 
-	inline void PrepareOperands(bool signextend = false);
+	void PrepareOperands(bool signextend = false);
 	
-	inline bool Byte();
+	bool Byte();
 
-	inline word GetReg();
+	word GetReg();
 
-	inline void SetReg(word x);
+	void SetReg(word x);
 
-	inline uint8_t& MemoryByte(uint32_t address);
+	word GetRM();
 
-	inline uint16_t& MemoryWord(uint32_t address);
+	void SetRM(word x, bool computeAddress = false);
 
-	inline uint8_t& PortByte(uint32_t address);
-
-	inline uint16_t& PortWord(uint32_t address);
-
-	inline word GetRM();
-
-	inline void SetRM(word x, bool computeAddress = false);
-
-	inline void SetRM_Address();
+	void SetRM_Address();
 	
-	inline void StoreResult();
+	void StoreResult();
 
-	inline byte GetIMM8();
+	template<typename T>
+	T GetImm();
 	
-	inline word GetIMM16();
+	void UpdateFlags_CF();
 	
-	inline byte ExtractByte();
+	void UpdateFlags_OF();
 
-	inline void UpdateFlags_CF();
+	void UpdateFlags_OF_sub();
+
+	void UpdateFlags_AF();
+
+	void Flip_AF();
 	
-	inline void UpdateFlags_OF();
+	void UpdateFlags_PF();
 
-	inline void UpdateFlags_OF_sub();
-
-	inline void UpdateFlags_AF();
-
-	inline void Flip_AF();
+	void UpdateFlags_ZF();
 	
-	inline void UpdateFlags_PF();
+	void UpdateFlags_SF();
 
-	inline void UpdateFlags_ZF();
-	
-	inline void UpdateFlags_SF();
+	void UpdateFlags_CFOFAF();
 
-	inline void UpdateFlags_CFOFAF();
+	void UpdateFlags_CFOFAF_sub();
 
-	inline void UpdateFlags_CFOFAF_sub();
+	void UpdateFlags_SFZFPF();
 
-	inline void UpdateFlags_SFZFPF();
+	void ClearFlags_CFOF();
 
-	inline void ClearFlags_CFOF();
+	void UpdateFlags_OFSFZFAFPF();
 
-	inline void UpdateFlags_OFSFZFAFPF();
+	void UpdateFlags_OFSFZFAFPF_sub();
 
-	inline void UpdateFlags_OFSFZFAFPF_sub();
+	void Push(word x);
 
-	inline void Push(word x);
-
-	inline word Pop();
+	word Pop();
 
 	const char* const m_segNames[4] = { "ES", "CS", "SS", "DS" };
 	const char* const m_regNames[2 * 8] = { "AL", "CL", "DL", "BL", "AH", "CH", "DH", "BH", "AX","CX", "DX", "BX", "SP", "BP", "SI", "DI" };
@@ -257,8 +189,7 @@ private:
 	word m_segments[4];
 	word m_old_segments[4];
 
-	byte* m_ram;
-	byte* m_port;
+	IO& m_io;
 	word m_flags;
 	word m_old_flags;
 
@@ -282,10 +213,10 @@ private:
 	char* dbg_args_ptr;
 	char dbg_args[128];
 
+	char dbg_buff[1024];
+
 	ImGuiTextBuffer m_log;
 	bool m_scrollToBottom;
-
-	int A20;
-
+	
 	static const uint8_t parity[0x100];
 };

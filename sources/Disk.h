@@ -1,6 +1,9 @@
 #pragma once
 #include <inttypes.h>
 #include <stdio.h>
+#include <memory>
+
+struct DiskImpl;
 
 class Disk
 {
@@ -17,30 +20,34 @@ public:
 		char volLabel[12];
 		char fileSysType[9];
 	};
+	Disk();
 
 	void Open(const char* path);
 
 	void Close();
 
-	void Read(char* dst, uint32_t location, uint32_t size);
+	bool Read(char* dst, uint16_t cylinder, uint8_t head, uint8_t sector, uint32_t sectorCount);
 
-	void Write(const char* dst, uint32_t location, uint32_t size);
-	
-	const BIOS_ParameterBlock& GetBiosBlock()
-	{
-		return m_biosBlock;
-	}
+	bool Write(const char* dst, uint16_t cylinder, uint8_t head, uint8_t sector, uint32_t sectorCount);
 
-	size_t size() const
-	{
-		return m_size;
-	}
+	bool IsBootlable() const;
+
+	bool IsFloppyDrive() const;
+
+	const BIOS_ParameterBlock& GetBiosBlock();
+
+	size_t size() const;
+
 private:
+	uint32_t ToLBA(uint16_t cylinder, uint8_t head, uint8_t sector);
+	void Read(char* dst, uint32_t location, uint32_t size);
+	void Write(const char* dst, uint32_t location, uint32_t size);
+
+	void ReadBIOS_ParameterBlock(uint32_t offset);
+
 	uint8_t ReadB(uint32_t location);
 	uint16_t ReadW(uint32_t location);
 	uint32_t ReadDW(uint32_t location);
-
-	BIOS_ParameterBlock m_biosBlock;
-	FILE* m_file;
-	size_t m_size;
+	
+	std::shared_ptr<DiskImpl> m_impl;
 };
