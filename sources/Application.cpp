@@ -734,13 +734,7 @@ void Application::Int(CPU::byte x)
 				int xcurs = cursor & 0x00ff; int ycurs = (cursor & 0xff00) >> 8;
 				int screenWidth = GetW(0x40, NUMBER_OF_SCREEN_COLUMNS);
 				int screenHeight = 25;
-
-				if (ycurs >= screenHeight)
-				{
-					scrollOneLine();
-					ycurs = screenHeight - 1;
-				}
-
+				
 				if (symbol == '\b')
 				{
 					--xcurs;
@@ -772,6 +766,12 @@ void Application::Int(CPU::byte x)
 						xcurs = 0;
 						ycurs++;
 					}
+				}
+
+				if (ycurs >= screenHeight)
+				{
+					scrollOneLine();
+					ycurs = screenHeight - 1;
 				}
 
 				cursor = ycurs; cursor <<= 8; cursor += xcurs;
