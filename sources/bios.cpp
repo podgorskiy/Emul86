@@ -180,29 +180,29 @@ void BIOS::InitBIOSDataArea()
 }
 
 
-#define SET_AH(b) m_cpu.SetRegB(CPU::AH, b)
-#define SET_AL(b) m_cpu.SetRegB(CPU::AL, b)
-#define SET_DH(b) m_cpu.SetRegB(CPU::DH, b)
-#define SET_BH(b) m_cpu.SetRegB(CPU::BH, b)
-#define SET_BL(b) m_cpu.SetRegB(CPU::BL, b)
-#define SET_DL(b) m_cpu.SetRegB(CPU::DL, b)
-#define SET_CH(b) m_cpu.SetRegB(CPU::CH, b)
-#define SET_CL(b) m_cpu.SetRegB(CPU::CL, b)
-#define SET_CX(b) m_cpu.SetRegW(CPU::CX, b)
-#define SET_DX(b) m_cpu.SetRegW(CPU::DX, b)
-#define SET_BX(b) m_cpu.SetRegW(CPU::BX, b)
-#define SET_AX(b) m_cpu.SetRegW(CPU::AX, b)
-#define GET_AH() m_cpu.GetRegB(CPU::AH)
-#define GET_BH() m_cpu.GetRegB(CPU::BH)
-#define GET_BL() m_cpu.GetRegB(CPU::BL)
-#define GET_CH() m_cpu.GetRegB(CPU::CH)
-#define GET_CL() m_cpu.GetRegB(CPU::CL)
-#define GET_DL() m_cpu.GetRegB(CPU::DL)
-#define GET_DH() m_cpu.GetRegB(CPU::DH)
-#define GET_AL() m_cpu.GetRegB(CPU::AL)
-#define GET_AX() m_cpu.GetRegW(CPU::AX)
-#define GET_CX() m_cpu.GetRegW(CPU::CX)
-#define GET_DX() m_cpu.GetRegW(CPU::DX)
+#define SET_AH(b) m_cpu.SetRegister<byte>(CPU::AH, b)
+#define SET_AL(b) m_cpu.SetRegister<byte>(CPU::AL, b)
+#define SET_DH(b) m_cpu.SetRegister<byte>(CPU::DH, b)
+#define SET_BH(b) m_cpu.SetRegister<byte>(CPU::BH, b)
+#define SET_BL(b) m_cpu.SetRegister<byte>(CPU::BL, b)
+#define SET_DL(b) m_cpu.SetRegister<byte>(CPU::DL, b)
+#define SET_CH(b) m_cpu.SetRegister<byte>(CPU::CH, b)
+#define SET_CL(b) m_cpu.SetRegister<byte>(CPU::CL, b)
+#define SET_CX(b) m_cpu.SetRegister<word>(CPU::CX, b)
+#define SET_DX(b) m_cpu.SetRegister<word>(CPU::DX, b)
+#define SET_BX(b) m_cpu.SetRegister<word>(CPU::BX, b)
+#define SET_AX(b) m_cpu.SetRegister<word>(CPU::AX, b)
+#define GET_AH() m_cpu.GetRegister<byte>(CPU::AH)
+#define GET_BH() m_cpu.GetRegister<byte>(CPU::BH)
+#define GET_BL() m_cpu.GetRegister<byte>(CPU::BL)
+#define GET_CH() m_cpu.GetRegister<byte>(CPU::CH)
+#define GET_CL() m_cpu.GetRegister<byte>(CPU::CL)
+#define GET_DL() m_cpu.GetRegister<byte>(CPU::DL)
+#define GET_DH() m_cpu.GetRegister<byte>(CPU::DH)
+#define GET_AL() m_cpu.GetRegister<byte>(CPU::AL)
+#define GET_AX() m_cpu.GetRegister<word>(CPU::AX)
+#define GET_CX() m_cpu.GetRegister<word>(CPU::CX)
+#define GET_DX() m_cpu.GetRegister<word>(CPU::DX)
 #define SET_CF() m_cpu.SetFlag<CPU::CF>()
 #define SET_ZF() m_cpu.SetFlag<CPU::ZF>()
 #define CLEAR_CF() m_cpu.ClearFlag<CPU::CF>()
@@ -210,8 +210,8 @@ void BIOS::InitBIOSDataArea()
 #define SET_DISK_RET_STATUS(status) io.MemStoreB(0x0040, 0x0074, status)
 
 #define SET_ES(b) m_cpu.SetSegment(CPU::ES, b)
-#define SET_BP(b) m_cpu.SetRegW(CPU::BP, b)
-#define SET_DI(b) m_cpu.SetRegW(CPU::DI, b)
+#define SET_BP(b) m_cpu.SetRegister<word>(CPU::BP, b)
+#define SET_DI(b) m_cpu.SetRegister<word>(CPU::DI, b)
 
 
 void BIOS::Int(byte x)
@@ -806,12 +806,12 @@ void BIOS::Int13DiskIOServices(int function, int arg)
 			   // We have only floppy disk, drive number 0.
 		if (io.HasDisk(diskNo))
 		{
-			int DiskNo = m_cpu.GetRegB(CPU::DL);
-			int HeadNo = m_cpu.GetRegB(CPU::DH);
-			int TrackNo = m_cpu.GetRegB(CPU::CH);
-			int SectorNo = m_cpu.GetRegB(CPU::CL);
-			int SectorNum = m_cpu.GetRegB(CPU::AL);
-			int ram_address = select(m_cpu.GetSegment(CPU::ES), m_cpu.GetRegW(CPU::BX));
+			int DiskNo = m_cpu.GetRegister<byte>(CPU::DL);
+			int HeadNo = m_cpu.GetRegister<byte>(CPU::DH);
+			int TrackNo = m_cpu.GetRegister<byte>(CPU::CH);
+			int SectorNo = m_cpu.GetRegister<byte>(CPU::CL);
+			int SectorNum = m_cpu.GetRegister<byte>(CPU::AL);
+			int ram_address = select(m_cpu.GetSegment(CPU::ES), m_cpu.GetRegister<word>(CPU::BX));
 
 			bool result = io.ReadDisk(diskNo, ram_address, TrackNo, HeadNo, SectorNo, SectorNum);
 
@@ -847,12 +847,12 @@ void BIOS::Int13DiskIOServices(int function, int arg)
 		*/
 		if (io.HasDisk(diskNo))
 		{
-			int DiskNo = m_cpu.GetRegB(CPU::DL);
-			int HeadNo = m_cpu.GetRegB(CPU::DH);
-			int TrackNo = m_cpu.GetRegB(CPU::CH);
-			int SectorNo = m_cpu.GetRegB(CPU::CL);
-			int SectorNum = m_cpu.GetRegB(CPU::AL);
-			int ram_address = select(m_cpu.GetSegment(CPU::ES), m_cpu.GetRegW(CPU::BX));
+			int DiskNo = m_cpu.GetRegister<byte>(CPU::DL);
+			int HeadNo = m_cpu.GetRegister<byte>(CPU::DH);
+			int TrackNo = m_cpu.GetRegister<byte>(CPU::CH);
+			int SectorNo = m_cpu.GetRegister<byte>(CPU::CL);
+			int SectorNum = m_cpu.GetRegister<byte>(CPU::AL);
+			int ram_address = select(m_cpu.GetSegment(CPU::ES), m_cpu.GetRegister<word>(CPU::BX));
 
 			bool result = io.WriteDisk(diskNo, ram_address, TrackNo, HeadNo, SectorNo, SectorNum);
 

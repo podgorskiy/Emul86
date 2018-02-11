@@ -110,46 +110,6 @@ void CPU::SetInterruptHandler(InterruptHandler* interruptHandler)
 }
 
 
-byte CPU::GetRegB(byte i)
-{
-	byte* reg8file = (byte*)m_registers;
-	byte _i = (i & 0x3) << 1 | ((i & 0x4) >> 2);
-	return reg8file[_i];
-}
-
-
-word CPU::GetRegW(byte i)
-{
-	return m_registers[i];
-}
-
-
-void CPU::SetRegB(byte i, byte x)
-{
-	byte* reg8file = (byte*)m_registers;
-	byte _i = (i & 0x3) << 1 | ((i & 0x4) >> 2);
-	reg8file[_i] = x;
-}
-
-
-void CPU::SetRegW(byte i, word x)
-{
-	m_registers[i] = x;
-}
-
-
-word CPU::GetSegment(byte i)
-{
-	return m_segments[i];
-}
-
-
-void CPU::SetSegment(byte i, word v)
-{
-	m_segments[i] = v;
-}
-
-
 void CPU::INT(byte x)
 {
 	m_interruptHandler->Int(x);
@@ -160,7 +120,7 @@ inline word CPU::GetReg(byte i)
 {
 	if (Byte())
 	{
-		return GetRegB(i);
+		return GetRegister<byte>(i);
 	}
 	else
 	{
@@ -173,7 +133,7 @@ inline void CPU::SetReg(byte i, word x)
 {
 	if (Byte())
 	{
-		SetRegB(i, x & 0xFF);
+		SetRegister<byte>(i, x & 0xFF);
 	}
 	else
 	{
@@ -1044,12 +1004,12 @@ void CPU::Step()
 		if (Byte())
 		{
 			APPEND_DBG_REGB(0);
-			m_io.Port<byte>(ADDRESS) = GetRegB(0);
+			m_io.Port<byte>(ADDRESS) = GetRegister<byte>(AL);
 		}
 		else
 		{
 			APPEND_DBG_REGW(0);
-			m_io.Port<word>(ADDRESS) = GetRegW(0);
+			m_io.Port<word>(ADDRESS) = GetRegister<word>(AX);
 		}
 		break;
 
@@ -1057,33 +1017,33 @@ void CPU::Step()
 		CMD_NAME("IN");
 		ADDRESS_METHOD = OPCODE1 & 1;
 		APPEND_DBG_REGW(DX);
-		ADDRESS = GetRegW(DX);
+		ADDRESS = GetRegister<word>(DX);
 		if (Byte())
 		{
 			APPEND_DBG_REGB(0);
-			SetRegB(0, m_io.Port<byte>(ADDRESS));
+			SetRegister<byte>(0, m_io.Port<byte>(ADDRESS));
 		}
 		else
 		{
 			APPEND_DBG_REGW(0);
-			SetRegW(0, m_io.Port<word>(ADDRESS));
+			SetRegister<word>(0, m_io.Port<word>(ADDRESS));
 		}
 		break;
 
 	case 0xEE: case 0xEF:
 		CMD_NAME("OUT");
 		ADDRESS_METHOD = OPCODE1 & 1;
-		ADDRESS = GetRegW(DX);
+		ADDRESS = GetRegister<word>(DX);
 		APPEND_DBG_REGW(DX);
 		if (Byte())
 		{
 			APPEND_DBG_REGB(0);
-			m_io.Port<byte>(ADDRESS) = GetRegB(0);
+			m_io.Port<byte>(ADDRESS) = GetRegister<byte>(0);
 		}
 		else
 		{
 			APPEND_DBG_REGW(0);
-			m_io.Port<word>(ADDRESS) = GetRegW(0);
+			m_io.Port<word>(ADDRESS) = GetRegister<word>(0);
 		}
 		break;
 
@@ -1101,7 +1061,7 @@ void CPU::Step()
 			{
 				offsetreg = m_segmentOverride;
 			}
-			m_io.Port<byte>(GetRegW(DX)) = m_io.Memory<byte>(select(GetSegment(offsetreg), GetRegW(SI)));
+			m_io.Port<byte>(GetRegister<word>(DX)) = m_io.Memory<byte>(select(GetSegment(offsetreg), GetRegister<word>(SI)));
 
 			m_registers[SI] += TestFlag<DF>() == 0 ? 1 : -1;
 			m_registers[DI] += TestFlag<DF>() == 0 ? 1 : -1;
@@ -1127,7 +1087,7 @@ void CPU::Step()
 			{
 				offsetreg = m_segmentOverride;
 			}
-			m_io.Port<word>(GetRegW(DX)) = m_io.Memory<word>(select(GetSegment(offsetreg), GetRegW(SI)));
+			m_io.Port<word>(GetRegister<word>(DX)) = m_io.Memory<word>(select(GetSegment(offsetreg), GetRegister<word>(SI)));
 
 			m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
 			m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
@@ -1148,7 +1108,7 @@ void CPU::Step()
 		}
 		for (int i = 0; i < times; ++i)
 		{
-			m_io.Memory<byte>(select(GetSegment(ES), GetRegW(DI))) = m_io.Port<byte>(GetRegW(DX));
+			m_io.Memory<byte>(select(GetSegment(ES), GetRegister<word>(DI))) = m_io.Port<byte>(GetRegister<word>(DX));
 			
 			m_registers[SI] += TestFlag<DF>() == 0 ? 1 : -1;
 			m_registers[DI] += TestFlag<DF>() == 0 ? 1 : -1;
@@ -1168,7 +1128,7 @@ void CPU::Step()
 		}
 		for (int i = 0; i < times; ++i)
 		{
-			m_io.Memory<word>(select(GetSegment(ES), GetRegW(DI))) = m_io.Port<word>(GetRegW(DX));
+			m_io.Memory<word>(select(GetSegment(ES), GetRegister<word>(DI))) = m_io.Port<word>(GetRegister<word>(DX));
 			m_registers[SI] += TestFlag<DF>() == 0 ? 2 : -2;
 			m_registers[DI] += TestFlag<DF>() == 0 ? 2 : -2;
 
@@ -1243,21 +1203,21 @@ void CPU::Step()
 
 	case 0x98:
 		CMD_NAME("CBW");
-		OPERAND_A = (sbyte)GetRegB(0);
-		SetRegW(0, OPERAND_A);
+		OPERAND_A = (sbyte)GetRegister<byte>(0);
+		SetRegister<word>(0, OPERAND_A);
 		break;
 
 	case 0x99:
 		CMD_NAME("CWD");
-		OPERAND_A = GetRegW(0);
-		SetRegW(DX, ((OPERAND_A & 0x8000) != 0) * 0xFFFF);
+		OPERAND_A = GetRegister<word>(0);
+		SetRegister<word>(DX, ((OPERAND_A & 0x8000) != 0) * 0xFFFF);
 		break;
 
 	case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x47:
 		CMD_NAME("INC");
 		ADDRESS_METHOD = r16;
 		APPEND_DBG_REGW((OPCODE1 & 0x07));
-		OPERAND_A = GetRegW(OPCODE1 & 0x07);
+		OPERAND_A = GetRegister<word>(OPCODE1 & 0x07);
 		OPERAND_B = 1;
 		RESULT = OPERAND_A + OPERAND_B;
 		UpdateFlags_OFSFZFAFPF();
@@ -1268,7 +1228,7 @@ void CPU::Step()
 		CMD_NAME("DEC");
 		ADDRESS_METHOD = r16;
 		APPEND_DBG_REGW((OPCODE1 & 0x07));
-		OPERAND_A = GetRegW(OPCODE1 & 0x07);
+		OPERAND_A = GetRegister<word>(OPCODE1 & 0x07);
 		OPERAND_B = 1;
 		RESULT = OPERAND_A - OPERAND_B;
 		UpdateFlags_OFSFZFAFPF_sub();
@@ -1279,7 +1239,7 @@ void CPU::Step()
 		CMD_NAME("PUSH");
 		ADDRESS_METHOD = r16;
 		APPEND_DBG_REGW((OPCODE1 & 0x07));
-		OPERAND_A = GetRegW(OPCODE1 & 0x07);
+		OPERAND_A = GetRegister<word>(OPCODE1 & 0x07);
 		Push(OPERAND_A);
 		break;
 
@@ -1290,20 +1250,20 @@ void CPU::Step()
 			ADDRESS_METHOD = r16;
 			OPERAND_A = Pop();
 			APPEND_DBG_REGW(reg);
-			SetRegW(reg, OPERAND_A);
+			SetRegister<word>(reg, OPERAND_A);
 		}
 		break;
 
 	case 0x90: case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x96: case 0x97:
 		CMD_NAME("XCHG");
 		ADDRESS_METHOD = r16;
-		OPERAND_A = GetRegW(OPCODE1 & 0x07);
+		OPERAND_A = GetRegister<word>(OPCODE1 & 0x07);
 		APPEND_DBG_REGW((OPCODE1 & 0x07));
 		APPEND_DBG(", ");
-		OPERAND_B = GetRegW(0);
+		OPERAND_B = GetRegister<word>(0);
 		APPEND_DBG_REGW(0);
-		SetRegW(OPCODE1 & 0x07, OPERAND_B);
-		SetRegW(0, OPERAND_A);
+		SetRegister<word>(OPCODE1 & 0x07, OPERAND_B);
+		SetRegister<word>(0, OPERAND_A);
 		break;
 
 	case 0x06:
@@ -1390,7 +1350,7 @@ void CPU::Step()
 			OPCODE2 = (MODREGRM & REG) >> 3;
 
 			times = GetImm<byte>();
-			OPERAND_A = GetRM() | GetRegW((MODREGRM & REG) >> 3) * 0x10000;
+			OPERAND_A = GetRM() | GetRegister<word>((MODREGRM & REG) >> 3) * 0x10000;
 			RESULT = OPERAND_A;
 
 			for (int i = 0; i < times; ++i)
@@ -1520,7 +1480,7 @@ void CPU::Step()
 			if (Byte())
 			{
 				APPEND_DBG_REGB(0);
-				OPERAND_A = (sbyte)GetRegB(0);
+				OPERAND_A = (sbyte)GetRegister<byte>(0);
 				APPEND_DBG(", ");
 				OPERAND_B = (sbyte)GetRM();
 				RESULT = OPERAND_A * OPERAND_B;
@@ -1532,11 +1492,11 @@ void CPU::Step()
 			else
 			{
 				APPEND_DBG_REGW(0);
-				OPERAND_A = (int16_t)GetRegW(0);
+				OPERAND_A = (int16_t)GetRegister<word>(0);
 				APPEND_DBG(", ");
 				OPERAND_B = (int16_t)GetRM();
 				RESULT = OPERAND_A * OPERAND_B;
-				m_registers[0] = RESULT;
+				m_registers[AX] = RESULT;
 				m_registers[DX] = RESULT >> 16;
 				uint32_t of = RESULT & 0xFFFF8000;
 				SetFlag<OF>(of != 0 && of != 0xFFFF8000);
@@ -1553,30 +1513,30 @@ void CPU::Step()
 			if (Byte())
 			{
 				APPEND_DBG_REGW(0);
-				OPERAND_A = (word)GetRegW(0);
+				OPERAND_A = (word)GetRegister<word>(AX);
 				APPEND_DBG(", ");
 				OPERAND_B = (word)GetRM();
 				RESULT = OPERAND_A / OPERAND_B;
-				SetRegB(AL, RESULT);
-				SetRegB(AH, (OPERAND_A % OPERAND_B));
+				SetRegister<byte>(AL, RESULT);
+				SetRegister<byte>(AH, (OPERAND_A % OPERAND_B));
 			}
 			else
 			{
 				APPEND_DBG_REGW(DX);
 				APPEND_DBG(":");
 				APPEND_DBG_REGW(0);
-				OPERAND_A = (uint32_t)GetRegW(0) + ((uint32_t)GetRegW(DX) << 16);
+				OPERAND_A = (uint32_t)GetRegister<word>(0) + ((uint32_t)GetRegister<word>(DX) << 16);
 				APPEND_DBG(", ");
 				OPERAND_B = (word)GetRM();
 				RESULT = OPERAND_A / OPERAND_B;
 				if (OPERAND_B == 0)
 				{
-					m_registers[0] = 0;
+					m_registers[AX] = 0;
 					m_registers[DX] = 0;
 				}
 				else
 				{
-					m_registers[0] = RESULT;
+					m_registers[AX] = RESULT;
 					m_registers[DX] = OPERAND_A % OPERAND_B;
 				}
 			}
@@ -1587,19 +1547,19 @@ void CPU::Step()
 			if (Byte())
 			{
 				APPEND_DBG_REGW(0);
-				OPERAND_A = (int16_t)GetRegW(0);
+				OPERAND_A = (int16_t)GetRegister<word>(0);
 				APPEND_DBG(", ");
 				OPERAND_B = (sbyte)GetRM();
 				if (OPERAND_B == 0)
 				{
-					m_registers[0] = 0;
+					m_registers[AX] = 0;
 					m_registers[DX] = 0;
 				}
 				else
 				{
 					RESULT = OPERAND_A / OPERAND_B;
-					SetRegB(AL, RESULT);
-					SetRegB(AH, (OPERAND_A % OPERAND_B));
+					SetRegister<byte>(AL, RESULT);
+					SetRegister<byte>(AH, (OPERAND_A % OPERAND_B));
 				}
 			}
 			else
@@ -1607,7 +1567,7 @@ void CPU::Step()
 				APPEND_DBG_REGW(DX);
 				APPEND_DBG(":");
 				APPEND_DBG_REGW(0);
-				OPERAND_A = (int32_t)(GetRegW(0) + ((uint32_t)GetRegW(DX) << 16));
+				OPERAND_A = (int32_t)(GetRegister<word>(0) + ((uint32_t)GetRegister<word>(DX) << 16));
 				APPEND_DBG(", ");
 				OPERAND_B = (int16_t)GetRM();				
 				if (OPERAND_B == 0)
@@ -1706,7 +1666,7 @@ void CPU::Step()
 
 		if (OPCODE1 & 0x02)
 		{
-			times = GetRegB(CL) & 0x1F;
+			times = GetRegister<byte>(CL) & 0x1F;
 		}
 		if (Byte())
 		{
@@ -2163,14 +2123,14 @@ void CPU::Step()
 			word src_seg = GetSegment(src_offsetreg);
 			APPEND_DBG(":");
 			APPEND_DBG_REGW(SI);
-			word src_offset = GetRegW(SI);
+			word src_offset = GetRegister<word>(SI);
 			APPEND_DBG(", [");
 			APPEND_DBG_SEG(ES);
 			word dst_seg = GetSegment(ES);
 			APPEND_DBG(":");
 			APPEND_DBG_REGW(DI);
 			APPEND_DBG("]");
-			word dst_offset = GetRegW(DI);
+			word dst_offset = GetRegister<word>(DI);
 			if (OPCODE1 & 1)
 			{
 				word w = m_io.Memory<word>(select(src_seg, src_offset));
@@ -2301,13 +2261,13 @@ void CPU::Step()
 				word src_seg = GetSegment(src_offsetreg);
 				APPEND_DBG(":");
 				APPEND_DBG_REGW(SI);
-				word src_offset = GetRegW(SI);
+				word src_offset = GetRegister<word>(SI);
 				APPEND_DBG(", ");
 				APPEND_DBG_SEG(ES);
 				word dst_seg = GetSegment(ES);
 				APPEND_DBG(":");
 				APPEND_DBG_REGW(DI);
-				word dst_offset = GetRegW(DI);
+				word dst_offset = GetRegister<word>(DI);
 				if (Byte())
 				{
 					OPERAND_A = m_io.Memory<byte>(select(src_seg, src_offset));
@@ -2378,23 +2338,23 @@ void CPU::Step()
 			CMD_NAME("SAHF");
 			{
 				byte mask = 0x80 | 0x40 | 0x10 | 0x04 | 0x01;
-				m_flags = (m_flags & 0xFF00) | (GetRegB(AH) & mask) | 0x2;
+				m_flags = (m_flags & 0xFF00) | (GetRegister<byte>(AH) & mask) | 0x2;
 			}
 			break;
 
 		case 0x9F:
 			CMD_NAME("LAHF");
-			SetRegB(AH, (m_flags & 0xFF) | 0x02);
+			SetRegister<byte>(AH, (m_flags & 0xFF) | 0x02);
 			break;
 
 		case 0xD5:
 			CMD_NAME("AAD");
 			{
-				int tempL = GetRegB(AL);
-				int tempH = GetRegB(AH);
-				SetRegB(AL, tempL + (tempH * GetImm<byte>()));
-				SetRegB(AH, 0);
-				RESULT = GetRegB(AL);
+				int tempL = GetRegister<byte>(AL);
+				int tempH = GetRegister<byte>(AH);
+				SetRegister<byte>(AL, tempL + (tempH * GetImm<byte>()));
+				SetRegister<byte>(AH, 0);
+				RESULT = GetRegister<byte>(AL);
 				UpdateFlags_SFZFPF();
 				break;
 			}
@@ -2402,11 +2362,11 @@ void CPU::Step()
 		case 0xD4:
 			CMD_NAME("AAM");
 			{
-				unsigned int tempL = GetRegB(AL);
+				unsigned int tempL = GetRegister<byte>(AL);
 				unsigned int imm8 = GetImm<byte>();
-				SetRegB(AH, tempL / imm8);
-				SetRegB(AL, tempL % imm8);
-				RESULT = GetRegB(AL);
+				SetRegister<byte>(AH, tempL / imm8);
+				SetRegister<byte>(AL, tempL % imm8);
+				RESULT = GetRegister<byte>(AL);
 				UpdateFlags_SFZFPF();
 				break;
 			}
@@ -2414,12 +2374,12 @@ void CPU::Step()
 		case 0x37:
 			CMD_NAME("AAA");
 			{
-				int tempL = GetRegB(AL);
-				int tempH = GetRegB(AH);
+				int tempL = GetRegister<byte>(AL);
+				int tempH = GetRegister<byte>(AH);
 				if (((tempL & 0x0F) > 9) || TestFlag<AF>())
 				{
-					SetRegB(AL, tempL + 6);
-					SetRegB(AH, tempH + 1);
+					SetRegister<byte>(AL, tempL + 6);
+					SetRegister<byte>(AH, tempH + 1);
 					SetFlag<AF>();
 					SetFlag<CF>();
 				}
@@ -2428,20 +2388,20 @@ void CPU::Step()
 					ClearFlag<AF>();
 					ClearFlag<CF>();
 				}
-				tempL = GetRegB(AL);
-				SetRegB(AL, tempL & 0xF);
+				tempL = GetRegister<byte>(AL);
+				SetRegister<byte>(AL, tempL & 0xF);
 			}
 			break;
 
 		case 0x3F:
 			CMD_NAME("AAS");
 			{
-				int tempL = GetRegB(AL);
-				int tempH = GetRegB(AH);
+				int tempL = GetRegister<byte>(AL);
+				int tempH = GetRegister<byte>(AH);
 				if (((tempL & 0x0F) > 9) || TestFlag<AF>())
 				{
-					SetRegB(AL, tempL - 6);
-					SetRegB(AH, tempH - 1);
+					SetRegister<byte>(AL, tempL - 6);
+					SetRegister<byte>(AH, tempH - 1);
 					SetFlag<AF>();
 					SetFlag<CF>();
 				}
@@ -2450,20 +2410,20 @@ void CPU::Step()
 					ClearFlag<AF>();
 					ClearFlag<CF>();
 				}
-				tempL = GetRegB(AL);
-				SetRegB(AL, tempL & 0xF);
+				tempL = GetRegister<byte>(AL);
+				SetRegister<byte>(AL, tempL & 0xF);
 			}
 			break;
 
 		case 0x27:
 			CMD_NAME("DAA");
 			{
-				int tempL = GetRegB(AL);
-				int tempH = GetRegB(AH);
+				int tempL = GetRegister<byte>(AL);
+				int tempH = GetRegister<byte>(AH);
 				bool oldCF = TestFlag<CF>();
 				if (((tempL & 0x0F) > 9) || TestFlag<AF>())
 				{
-					SetRegB(AL, tempL + 6);
+					SetRegister<byte>(AL, tempL + 6);
 					SetFlag<AF>();
 					SetFlag<CF>(TestFlag<CF>() || (0x100 & (tempL + 6)));
 				}
@@ -2473,14 +2433,14 @@ void CPU::Step()
 				}
 				if (tempL > 0x99 || oldCF)
 				{
-					SetRegB(AL, GetRegB(AL) + 0x60);
+					SetRegister<byte>(AL, GetRegister<byte>(AL) + 0x60);
 					SetFlag<CF>();
 				}
 				else
 				{
 					ClearFlag<CF>();
 				}
-				RESULT = GetRegB(AL);
+				RESULT = GetRegister<byte>(AL);
 				UpdateFlags_SFZFPF();
 			}
 			break;
@@ -2488,12 +2448,12 @@ void CPU::Step()
 		case 0x2F:
 			CMD_NAME("DAS");
 			{
-				int tempL = GetRegB(AL);
-				int tempH = GetRegB(AH);
+				int tempL = GetRegister<byte>(AL);
+				int tempH = GetRegister<byte>(AH);
 				bool oldCF = TestFlag<CF>();
 				if (((tempL & 0x0F) > 9) || TestFlag<AF>())
 				{
-					SetRegB(AL, tempL - 6);
+					SetRegister<byte>(AL, tempL - 6);
 					SetFlag<AF>();
 					SetFlag<CF>(TestFlag<CF>() || (0x100 & (tempL - 6)));
 				}
@@ -2503,14 +2463,14 @@ void CPU::Step()
 				}
 				if (tempL > 0x99 || oldCF)
 				{
-					SetRegB(AL, GetRegB(AL) - 0x60);
+					SetRegister<byte>(AL, GetRegister<byte>(AL) - 0x60);
 					SetFlag<CF>();
 				}
 				else
 				{
 					ClearFlag<CF>();
 				}
-				RESULT = GetRegB(AL);
+				RESULT = GetRegister<byte>(AL);
 				UpdateFlags_SFZFPF();
 			}
 			break;
@@ -2529,7 +2489,7 @@ void CPU::Step()
 					offsetreg = m_segmentOverride;
 				}
 				word seg = GetSegment(offsetreg);
-				SetRegB(AL, m_io.Memory<byte>(select(seg, GetRegW(BX) + word(GetRegB(AL)))));
+				SetRegister<byte>(AL, m_io.Memory<byte>(select(seg, GetRegister<word>(BX) + word(GetRegister<byte>(AL)))));
 			}
 			break;
 
@@ -2540,10 +2500,10 @@ void CPU::Step()
 			byte level = GetImm<byte>();
 			level &= 0x1F;
 
-			word bp = GetRegW(BP);
+			word bp = GetRegister<word>(BP);
 
 			Push(bp);
-			word frame_ptr16 = GetRegW(SP);
+			word frame_ptr16 = GetRegister<word>(SP);
 
 			if (level > 0)
 			{
@@ -2557,18 +2517,18 @@ void CPU::Step()
 				Push(frame_ptr16);
 			}
 
-			SetRegW(BP, frame_ptr16 + 0);
-			SetRegW(SP, GetRegW(SP) - imm16);
+			SetRegister<word>(BP, frame_ptr16 + 0);
+			SetRegister<word>(SP, GetRegister<word>(SP) - imm16);
 		}
 		break;
 
 		case 0xC9:
 		{
 			CMD_NAME("LEAVE");
-			word bp = GetRegW(BP);
+			word bp = GetRegister<word>(BP);
 			word value = m_io.Memory<word>(select(GetSegment(SS), bp));
-			SetRegW((byte)SP, bp + 2);
-			SetRegW(BP, value + 0);
+			SetRegister<word>((byte)SP, bp + 2);
+			SetRegister<word>(BP, value + 0);
 		}
 		break;
 

@@ -158,7 +158,7 @@ int main(int argc, char **argv)
 
 	ImGui_ImplGlfwGL3_Init(window, false);
 
-	ImGui::GetIO().FontGlobalScale = scale;
+	ImGui::GetIO().FontGlobalScale = (float)scale;
 
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.Colors[ImGuiCol_Text] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);

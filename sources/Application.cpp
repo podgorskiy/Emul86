@@ -206,9 +206,9 @@ void Application::RunCPUTest()
 	m_cpu.Reset();
 	m_cpu.IP = 0xfff0;
 	m_cpu.SetSegment(CPU::CS, BIOS_SEGMENT);
-	m_cpu.SetRegW(CPU::AX, 0);
-	m_cpu.SetRegW(CPU::DI, 0);
-	m_cpu.SetRegW(CPU::SP, 0);
+	m_cpu.SetRegister<word>(CPU::AX, 0);
+	m_cpu.SetRegister<word>(CPU::DI, 0);
+	m_cpu.SetRegister<word>(CPU::SP, 0);
 
 	std::ifstream input("../ref_log.txt");
 
@@ -249,7 +249,7 @@ bool Application::KeyCallback(int key)
 	bool was_halted = m_io.KeyCallback(key);
 	if (was_halted)
 	{
-		m_cpu.SetRegW(CPU::AX, key);
+		m_cpu.SetRegister<word>(CPU::AX, key);
 		return true;
 	}
 	return false;

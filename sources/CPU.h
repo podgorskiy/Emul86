@@ -51,15 +51,13 @@ public:
 
 	void Reset();
 
-	byte GetRegB(byte i);
+	template <typename T>
+	T GetRegister(byte i) const;
 
-	word GetRegW(byte i);
+	template <typename T>
+	void SetRegister(byte i, T v);
 
-	void SetRegB(byte i, byte x);
-
-	void SetRegW(byte i, word x);
-
-	word GetSegment(byte i);
+	word GetSegment(byte i) const;
 
 	void SetSegment(byte i, word v);
 
@@ -220,3 +218,43 @@ private:
 	
 	static const uint8_t parity[0x100];
 };
+
+
+inline word CPU::GetSegment(byte i) const
+{
+	return m_segments[i];
+}
+
+
+inline void CPU::SetSegment(byte i, word v)
+{
+	m_segments[i] = v;
+}
+
+template <>
+inline byte CPU::GetRegister<byte>(byte i) const
+{
+	byte* reg8file = (byte*)m_registers;
+	byte _i = ((i * 2) & 0x06) | ((i / 4) & 1);
+	return reg8file[_i];
+}
+
+template <>
+inline void CPU::SetRegister<byte>(byte i, byte v)
+{
+	byte* reg8file = (byte*)m_registers;
+	byte _i = ((i * 2) & 0x06) | ((i / 4) & 1);
+	reg8file[_i] = v;
+}
+
+template <>
+inline word CPU::GetRegister<word>(byte i) const
+{
+	return m_registers[i];
+}
+
+template <>
+inline void CPU::SetRegister<word>(byte i, word v)
+{
+	m_registers[i] = v;
+}
