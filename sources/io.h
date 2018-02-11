@@ -73,38 +73,44 @@ private:
 	std::chrono::time_point<std::chrono::system_clock> m_start;
 };
 
+#ifdef ENABLE_A20
+#define A20_GATE(X) (X & A20)
+#else
+#define A20_GATE(X) X
+#endif
+
 template<>
 inline word& IO::Memory<word>(uint32_t address)
 {
-	return *reinterpret_cast<word*>(m_ram + (address & A20));
+	return *reinterpret_cast<word*>(m_ram + A20_GATE(address));
 }
 
 template<>
 inline const word& IO::Memory<word>(uint32_t address) const
 {
-	return *reinterpret_cast<word*>(m_ram + (address & A20));
+	return *reinterpret_cast<word*>(m_ram + A20_GATE(address));
 }
 
 template<>
 inline byte& IO::Memory<byte>(uint32_t address)
 {
-	return *reinterpret_cast<byte*>(m_ram + (address & A20));
+	return *reinterpret_cast<byte*>(m_ram + A20_GATE(address));
 }
 
 template<>
 inline const byte& IO::Memory<byte>(uint32_t address) const
 {
-	return *reinterpret_cast<byte*>(m_ram + (address & A20));
+	return *reinterpret_cast<byte*>(m_ram + A20_GATE(address));
 }
 
 template<>
 inline byte& IO::Port<byte>(uint32_t address)
 {
-	return *reinterpret_cast<byte*>(m_ram + (address & A20));
+	return *reinterpret_cast<byte*>(m_ram + A20_GATE(address));
 }
 
 template<>
 inline word& IO::Port<word>(uint32_t address)
 {
-	return *reinterpret_cast<word*>(m_ram + (address & A20));
+	return *reinterpret_cast<word*>(m_ram + A20_GATE(address));
 }
