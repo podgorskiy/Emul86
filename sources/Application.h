@@ -18,6 +18,7 @@ public:
 	void Resize(int width, int height);
 	void SetScale(int scale);
 	bool KeyCallback(int key);
+	void Boot();
 
 	IO& GetIO();
 private:

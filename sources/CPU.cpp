@@ -47,6 +47,7 @@ dbg_args_ptr = n2hexstr(dbg_args_ptr, X, N)
 
 #else
 #define UNKNOWN_OPCODE(X) 
+#define APPEND_DBG_REGT(X, T)
 #define APPEND_DBG_REG(X)
 #define APPEND_DBG_REGB(X) 
 #define APPEND_DBG_REGW(X) 
@@ -89,7 +90,6 @@ char* print_address(char* dst, word segment, word offset)
 	return &(*n2hexstr(tmp, offset) = '\x0');	
 }
 
-
 CPU::CPU(IO& io) : m_io(io)
 {
 	Reset();
@@ -102,19 +102,19 @@ CPU::CPU(IO& io) : m_io(io)
 
 
 template<>
-inline const char* CPU::GetRegName<byte>(int i)
+const char* CPU::GetRegName<byte>(int i)
 {
 	return m_regNames[i];
 }
 
 template<>
-inline const char* CPU::GetRegName<word>(int i)
+const char* CPU::GetRegName<word>(int i)
 {
 	return m_regNames[i + 8];
 }
 
 template<typename T>
-inline T CPU::GetImm()
+T CPU::GetImm()
 {
 	uint32_t address = select(m_segments[CS], IP);
 	IP += sizeof(T);
@@ -135,7 +135,7 @@ void CPU::INT(byte x)
 
 
 template<typename T>
-inline void CPU::PrepareOperands_RM_REG()
+void CPU::PrepareOperands_RM_REG()
 {
 	MODREGRM = GetImm<byte>();
 	OPERAND_A = GetRM<T>();
@@ -145,7 +145,7 @@ inline void CPU::PrepareOperands_RM_REG()
 
 
 template<typename T>
-inline void CPU::PrepareOperands_REG_RM()
+void CPU::PrepareOperands_REG_RM()
 {
 	MODREGRM = GetImm<byte>();
 	OPERAND_A = GetRegister<T>();
@@ -155,7 +155,7 @@ inline void CPU::PrepareOperands_REG_RM()
 
 
 template<typename T>
-inline void CPU::PrepareOperands_AXL_IMM()
+void CPU::PrepareOperands_AXL_IMM()
 {
 	APPEND_DBG_REGT(0, T);
 	OPERAND_A = GetRegister<T>(0);
@@ -207,7 +207,7 @@ inline void CPU::SetRegister(T v)
 
 
 template<typename T>
-inline T CPU::GetRM()
+T CPU::GetRM()
 {
 	if ((MODREGRM & MOD) == MOD)
 	{
@@ -225,7 +225,7 @@ inline T CPU::GetRM()
 
 
 template<typename T>
-inline void CPU::SetRM(T x, bool computeAddress)
+void CPU::SetRM(T x, bool computeAddress)
 {
 	if ((MODREGRM & MOD) == MOD)
 	{
@@ -248,7 +248,7 @@ inline void CPU::SetRM(T x, bool computeAddress)
 }
 
 
-inline void CPU::SetRM_Address()
+void CPU::SetRM_Address()
 {
 	int32_t reg = 0;
 	int32_t disp = 0;
@@ -324,70 +324,67 @@ inline void CPU::StoreResult_AXL()
 
 
 template<typename T>
-int32_t SignExtension(T x);
+inline int32_t SignExtension(T x);
 
 
 template<>
-int32_t SignExtension<byte>(byte x)
+inline int32_t SignExtension<byte>(byte x)
 {
 	return (sbyte)x;
 }
 
 
 template<>
-int32_t SignExtension<word>(word x)
+inline int32_t SignExtension<word>(word x)
 {
 	return (sword)x;
 }
 
 template<typename T>
-constexpr int32_t GetMSBMask();
+constexpr uint32_t GetMSBMask();
 
 
 template<>
-constexpr int32_t GetMSBMask<byte>()
+inline constexpr uint32_t GetMSBMask<byte>()
 {
 	return 0x80;
 }
 
 
 template<>
-constexpr int32_t GetMSBMask<word>()
+inline constexpr uint32_t GetMSBMask<word>()
 {
 	return 0x8000;
 }
 
 template<typename T>
-constexpr int32_t GetShiftClippingMask();
+inline constexpr uint32_t GetShiftClippingMask();
 
 
 template<>
-constexpr int32_t GetShiftClippingMask<byte>()
+inline constexpr uint32_t GetShiftClippingMask<byte>()
 {
 	return 0x7;
 }
 
 template<>
-constexpr int32_t GetShiftClippingMask<word>()
+inline constexpr uint32_t GetShiftClippingMask<word>()
 {
 	return 0x1F;
 }
 
-template<typename T>
-constexpr int32_t ssizeof();
-
 
 template<>
-constexpr int32_t ssizeof<byte>()
+inline word CPU::GetStep<byte>()
 {
-	return 1;
+	return TestFlag<DF>() == 0 ? 1 : -1;
 }
 
 
 template<>
-constexpr int32_t ssizeof<word>()
+inline word CPU::GetStep<word>()
 {
-	return 2;
+	return TestFlag<DF>() == 0 ? 2 : -2;
 }
 
 
@@ -453,7 +450,7 @@ inline void CPU::UpdateFlags_SF()
 
 
 template<typename T>
-inline void CPU::UpdateFlags_CFOFAF()
+void CPU::UpdateFlags_CFOFAF()
 {
 	UpdateFlags_CF<T>();
 	UpdateFlags_OF<T>();
@@ -462,7 +459,7 @@ inline void CPU::UpdateFlags_CFOFAF()
 
 
 template<typename T>
-inline void CPU::UpdateFlags_CFOFAF_sub()
+void CPU::UpdateFlags_CFOFAF_sub()
 {
 	UpdateFlags_CF<T>();
 	UpdateFlags_OF_sub<T>();
@@ -471,7 +468,7 @@ inline void CPU::UpdateFlags_CFOFAF_sub()
 
 
 template<typename T>
-inline void CPU::UpdateFlags_SFZFPF()
+void CPU::UpdateFlags_SFZFPF()
 {
 	UpdateFlags_SF<T>();
 	UpdateFlags_ZF<T>();
@@ -479,7 +476,7 @@ inline void CPU::UpdateFlags_SFZFPF()
 }
 
 
-inline void CPU::ClearFlags_CFOF()
+void CPU::ClearFlags_CFOF()
 {
 	ClearFlag<CF>();
 	ClearFlag<OF>();
@@ -487,7 +484,7 @@ inline void CPU::ClearFlags_CFOF()
 
 
 template<typename T>
-inline void CPU::UpdateFlags_OFSFZFAFPF()
+void CPU::UpdateFlags_OFSFZFAFPF()
 {
 	UpdateFlags_OF<T>();
 	UpdateFlags_SF<T>();
@@ -498,7 +495,7 @@ inline void CPU::UpdateFlags_OFSFZFAFPF()
 
 
 template<typename T>
-inline void CPU::UpdateFlags_OFSFZFAFPF_sub()
+void CPU::UpdateFlags_OFSFZFAFPF_sub()
 {
 	UpdateFlags_OF_sub<T>();
 	UpdateFlags_SF<T>();
@@ -508,13 +505,13 @@ inline void CPU::UpdateFlags_OFSFZFAFPF_sub()
 }
 
 
-inline void CPU::Push(word x)
+void CPU::Push(word x)
 {
 	m_registers[SP] -= 2;
 	uint32_t address = select(m_segments[SS], m_registers[SP]);
 	m_io.Memory<word>(address) = x;
 }
-inline word CPU::Pop()
+word CPU::Pop()
 {
 	uint32_t address = select(m_segments[SS], m_registers[SP]);
 	word x = m_io.Memory<word>(address);
@@ -567,7 +564,7 @@ const char* CPU::GetLastCommandAsm()
 
 
 template<typename T>
-inline void CPU::ADD()
+void CPU::ADD()
 {
 	CMD_NAME("ADD");
 	RESULT = OPERAND_A + OPERAND_B;
@@ -577,7 +574,7 @@ inline void CPU::ADD()
 
 
 template<typename T>
-inline void CPU::ADC()
+void CPU::ADC()
 {
 	CMD_NAME("ADC");
 	RESULT = OPERAND_A + OPERAND_B + (uint32_t)TestFlag<CF>();
@@ -587,7 +584,7 @@ inline void CPU::ADC()
 
 
 template<typename T>
-inline void CPU::AND()
+void CPU::AND()
 {
 	CMD_NAME("AND");
 	RESULT = OPERAND_A & OPERAND_B;
@@ -598,7 +595,7 @@ inline void CPU::AND()
 
 
 template<typename T>
-inline void CPU::XOR()
+void CPU::XOR()
 {
 	CMD_NAME("XOR");
 	RESULT = OPERAND_A ^ OPERAND_B;
@@ -609,7 +606,7 @@ inline void CPU::XOR()
 
 
 template<typename T>
-inline void CPU::OR()
+void CPU::OR()
 {
 	CMD_NAME("OR");
 	RESULT = OPERAND_A | OPERAND_B;
@@ -620,7 +617,7 @@ inline void CPU::OR()
 
 
 template<typename T>
-inline void CPU::SBB()
+void CPU::SBB()
 {
 	CMD_NAME("SBB");
 	RESULT = OPERAND_A - OPERAND_B - (uint32_t)TestFlag<CF>();
@@ -630,7 +627,7 @@ inline void CPU::SBB()
 
 
 template<typename T>
-inline void CPU::SUB()
+void CPU::SUB()
 {
 	CMD_NAME("SUB");
 	RESULT = OPERAND_A - OPERAND_B;
@@ -640,7 +637,7 @@ inline void CPU::SUB()
 
 
 template<typename T>
-inline void CPU::CMP()
+void CPU::CMP()
 {
 	CMD_NAME("CMP");
 	RESULT = OPERAND_A - OPERAND_B;
@@ -650,7 +647,7 @@ inline void CPU::CMP()
 
 
 template<typename T>
-inline void CPU::MOV_rm_imm()
+void CPU::MOV_rm_imm()
 {
 	CMD_NAME("MOV");
 	MODREGRM = GetImm<byte>();
@@ -908,7 +905,7 @@ void CPU::XCHG()
 }
 
 
-inline void CPU::LOOP()
+void CPU::LOOP()
 {
 	CMD_NAME("LOOP");
 	--m_registers[CX];
@@ -920,7 +917,7 @@ inline void CPU::LOOP()
 }
 
 
-inline void CPU::LOOPZ()
+void CPU::LOOPZ()
 {
 	CMD_NAME("LOOPZ");
 	--m_registers[CX];
@@ -935,7 +932,7 @@ inline void CPU::LOOPZ()
 }
 
 
-inline void CPU::LOOPNZ()
+void CPU::LOOPNZ()
 {
 	CMD_NAME("LOOPNZ");
 	--m_registers[CX];
@@ -951,7 +948,7 @@ inline void CPU::LOOPNZ()
 
 
 template<typename T>
-inline void CPU::LODS()
+void CPU::LODS()
 {
 	int times = 1;
 	if (m_REP)
@@ -971,21 +968,23 @@ inline void CPU::LODS()
 	APPEND_DBG_SEG(offsetreg);
 	APPEND_DBG(":SI], ");
 
+#ifdef _DEBUG
 	GetRegister<T>(0);
+#endif
 
 	for (int i = 0; i < times; ++i)
 	{
 		ADDRESS = segment + m_registers[SI];
 		OPERAND_A = m_io.Memory<T>(ADDRESS);
 		SetRegister<T>(0, OPERAND_A);
-		m_registers[SI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
+		m_registers[SI] += GetStep<T>();
 
+#ifdef _DEBUG
 		if (i != times - 1)
 		{
-#ifdef _DEBUG
 			*(dbg_args_ptr = dbg_args) = 0;
-#endif
 		}
+#endif
 		if (m_REP)
 		{
 			m_registers[CX]--;
@@ -1002,6 +1001,7 @@ void CPU::STOS()
 	{
 		times = m_registers[CX];
 	}
+	word step = GetStep<T>();
 	for (int i = 0; i < times; ++i)
 	{
 		CMD_NAME("STOS");
@@ -1013,14 +1013,14 @@ void CPU::STOS()
 		ADDRESS += m_registers[DI];
 
 		m_io.Memory<T>(ADDRESS) = OPERAND_A;
-		m_registers[DI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
+		m_registers[DI] += step;
 
+#ifdef _DEBUG
 		if (i != times - 1)
 		{
-#ifdef _DEBUG
 			*(dbg_args_ptr = dbg_args) = 0;
-#endif
 		}
+#endif
 		if (m_REP)
 		{
 			m_registers[CX]--;
@@ -1037,6 +1037,7 @@ void CPU::SCAS()
 	{
 		times = m_registers[CX];
 	}
+	word step = GetStep<T>();
 	for (int i = 0; i < times; ++i)
 	{
 		CMD_NAME("SCAS");
@@ -1048,18 +1049,18 @@ void CPU::SCAS()
 		ADDRESS += m_registers[DI];
 
 		OPERAND_B = m_io.Memory<T>(ADDRESS);
-		m_registers[DI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
+		m_registers[DI] += step;
 
 		RESULT = OPERAND_A - OPERAND_B;
 		UpdateFlags_CFOFAF_sub<T>();
 		UpdateFlags_SFZFPF<T>();
 
+#ifdef _DEBUG
 		if (i != times - 1)
 		{
-#ifdef _DEBUG
 			*(dbg_args_ptr = dbg_args) = 0;
-#endif
 		}
+#endif
 
 		if (m_REP || m_REPN)
 		{
@@ -1085,6 +1086,7 @@ void CPU::CMPS()
 	{
 		times = m_registers[CX];
 	}
+	word step = GetStep<T>();
 	for (int i = 0; i < times; ++i)
 	{
 		CMD_NAME("CMPS");
@@ -1108,14 +1110,15 @@ void CPU::CMPS()
 		RESULT = OPERAND_A - OPERAND_B;
 		UpdateFlags_CFOFAF_sub<T>();
 		UpdateFlags_SFZFPF<T>();
-		m_registers[SI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
-		m_registers[DI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
+		m_registers[SI] += step;
+		m_registers[DI] += step;
+
+#ifdef _DEBUG
 		if (i != times - 1)
 		{
-#ifdef _DEBUG
 			*(dbg_args_ptr = dbg_args) = 0;
-#endif
 		}
+#endif
 		if (m_REP || m_REPN)
 		{
 			m_registers[CX]--;
@@ -1140,6 +1143,7 @@ void CPU::MOVS()
 	{
 		times = m_registers[CX];
 	}
+	word step = GetStep<T>();
 	for (int i = 0; i < times; ++i)
 	{
 		CMD_NAME("MOVS");
@@ -1161,14 +1165,16 @@ void CPU::MOVS()
 		word dst_offset = GetRegister<word>(DI);
 		T w = m_io.Memory<T>(select(src_seg, src_offset));
 		m_io.Memory<T>(select(dst_seg, dst_offset)) = w;
-		m_registers[SI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
-		m_registers[DI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
+
+		m_registers[SI] += step;
+		m_registers[DI] += step;
+
+#ifdef _DEBUG
 		if (i != times - 1)
 		{
-#ifdef _DEBUG
 			*(dbg_args_ptr = dbg_args) = 0;
-#endif
 		}
+#endif
 		if (m_REP || m_REPN)
 		{
 			m_registers[CX]--;
@@ -1226,12 +1232,13 @@ void CPU::INS()
 	{
 		times = m_registers[CX];
 	}
+	word step = GetStep<T>();
 	for (int i = 0; i < times; ++i)
 	{
 		m_io.Memory<T>(select(GetSegment(ES), GetRegister<word>(DI))) = m_io.Port<T>(GetRegister<word>(DX));
 
-		m_registers[SI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
-		m_registers[DI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
+		m_registers[SI] += step;
+		m_registers[DI] += step;
 
 		if (m_REP)
 		{
@@ -1250,6 +1257,7 @@ void CPU::OUTS()
 	{
 		times = m_registers[CX];
 	}
+	word step = GetStep<T>();
 	for (int i = 0; i < times; ++i)
 	{
 		byte offsetreg = DS;
@@ -1259,8 +1267,8 @@ void CPU::OUTS()
 		}
 		m_io.Port<T>(GetRegister<word>(DX)) = m_io.Memory<T>(select(GetSegment(offsetreg), GetRegister<word>(SI)));
 
-		m_registers[SI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
-		m_registers[DI] += TestFlag<DF>() == 0 ? ssizeof<T>() : -ssizeof<T>();
+		m_registers[SI] += step;
+		m_registers[DI] += step;
 
 		if (m_REP)
 		{
@@ -1275,7 +1283,7 @@ void CPU::Step()
 #ifdef _DEBUG
 	dbg_args_ptr = dbg_args;
 	dbg_args[0] = 0;
-	
+
 	memcpy(m_old_registers, m_registers, sizeof(m_registers));
 	memcpy(m_old_segments, m_segments, sizeof(m_segments));
 	memcpy(&m_old_flags, &m_flags, sizeof(m_flags));
@@ -1290,49 +1298,35 @@ void CPU::Step()
 		fflush(logfile);
 	}
 #endif
-
 	m_LOCK = false;
 	m_REPN = false;
 	m_REP = false;
+	m_segmentOverride = NONE;
 
+	StepInternal();
+
+#ifdef _DEBUG
+	if (logging_state)
+	{
+		m_log.appendf("%s %s %s\n\r", dbg_cmd_address, dbg_cmd_name, dbg_args);
+		printf("%s %s %s\n", dbg_cmd_address, dbg_cmd_name, dbg_args);
+		m_scrollToBottom = true;
+	}
+#endif
+}
+
+void CPU::StepInternal()
+{
 	byte seg = 0;
 	byte data = 0;
-	byte reg = 0;
 	bool condition = false;
-	word MSB_MASK = 0;
 	int16_t offset = 0;
 	int times = 1;
 
-	m_segmentOverride = NONE;
 	bool sizeOverride = false;
 	bool addressOverride = false;
 
-	// Read Instruction Prefixes. Up to four prefixes of 1 - byte each
-	while (true)
-	{
-		byte data;
-		data = GetImm<byte>();
-		switch (data)
-		{
-		case 0xF0: m_LOCK = true; break;
-		case 0xF2: m_REPN = true; break;
-		case 0xF3: m_REP = true; break;
-		case 0x2E: m_segmentOverride = CS; break;
-		case 0x36: m_segmentOverride = SS; break;
-		case 0x3E: m_segmentOverride = DS; break;
-		case 0x26: m_segmentOverride = ES; break;
-		case 0x66: sizeOverride = true; break;
-		case 0x67: addressOverride = true; break;
-			//case 0x66: /* operand SIZE override */ break;
-			//case 0x67: /* address SIZE override */ break;
-			//case 0x0F: /* SIMD stream */ break;
-		default:
-			OPCODE1 = data;
-			goto opcode;
-		}
-	}
-	
-opcode:
+	OPCODE1 = GetImm<byte>();
 	
 	switch (OPCODE1)
 	{
@@ -1401,6 +1395,8 @@ opcode:
 	case 0x1E: CMD_NAME("PUSH DS"); Push(m_segments[DS]); break;
 	case 0x1F: CMD_NAME("POP DS"); m_segments[DS] = Pop(); break;
 
+	case 0x26: m_segmentOverride = ES; StepInternal(); break;
+
 	case 0x27:
 		CMD_NAME("DAA");
 		{
@@ -1430,6 +1426,8 @@ opcode:
 			UpdateFlags_SFZFPF<byte>();
 		}
 		break;
+
+	case 0x2E: m_segmentOverride = CS; StepInternal(); break;
 
 	case 0x2F:
 		CMD_NAME("DAS");
@@ -1461,6 +1459,8 @@ opcode:
 		}
 		break;
 
+	case 0x36: m_segmentOverride = SS; StepInternal(); break;
+
 	case 0x37:
 		CMD_NAME("AAA");
 		{
@@ -1483,6 +1483,8 @@ opcode:
 		}
 		break;
 
+	case 0x3E: m_segmentOverride = DS; StepInternal(); break;
+
 	case 0x3F:
 		CMD_NAME("AAS");
 		{
@@ -1504,7 +1506,7 @@ opcode:
 			SetRegister<byte>(AL, tempL & 0xF);
 		}
 		break;
-
+		
 	case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x47:
 		CMD_NAME("INC");
 		APPEND_DBG_REGW((OPCODE1 & 0x07));
@@ -1569,6 +1571,9 @@ opcode:
 	}
 	break;
 
+	case 0x66: sizeOverride = true; StepInternal(); break;
+	case 0x67: addressOverride = true; StepInternal(); break;
+
 	case 0x68:
 		CMD_NAME("PUSH");
 		OPERAND_A = GetImm<word>();
@@ -1586,7 +1591,7 @@ opcode:
 		OPERAND_B = (int16_t)GetImm<word>();
 		APPEND_HEX_DBG(OPERAND_B);
 		RESULT = OPERAND_A * OPERAND_B;
-		GetRegister<word>(RESULT);
+		SetRegister<word>(RESULT);
 		UpdateFlags_ZF<word>();
 		ClearFlag<AF>();
 		UpdateFlags_PF();
@@ -1613,7 +1618,7 @@ opcode:
 		OPERAND_B = (sbyte)GetImm<byte>(); // sign extend
 		APPEND_HEX_DBG(OPERAND_B);
 		RESULT = OPERAND_A * OPERAND_B;
-		GetRegister<word>(RESULT);
+		SetRegister<word>(RESULT);
 		UpdateFlags_ZF<word>();
 		ClearFlag<AF>();
 		UpdateFlags_PF();
@@ -1777,7 +1782,7 @@ opcode:
 
 	case 0xC0: MODREGRM = GetImm<byte>(); times = GetImm<byte>(); Group2<byte>(times); break;
 	case 0xC1: MODREGRM = GetImm<byte>(); times = GetImm<byte>(); Group2<word>(times); break;
-	case 0xC2: CMD_NAME("RET"); IP = Pop(); m_registers[SP] += GetImm<word>(); break;
+	case 0xC2: CMD_NAME("RET"); times = GetImm<word>(); IP = Pop(); m_registers[SP] += times; break;
 	case 0xC3: CMD_NAME("RET"); IP = Pop(); break;
 
 	case 0xC4:
@@ -1846,7 +1851,7 @@ opcode:
 	}
 	break;
 
-	case 0xCA: CMD_NAME("RET"); IP = Pop(); m_segments[CS] = Pop(); m_registers[SP] += GetImm<word>(); break;
+	case 0xCA: CMD_NAME("RET"); times = GetImm<word>(); IP = Pop(); m_segments[CS] = Pop(); m_registers[SP] += times; break;
 	case 0xCB: CMD_NAME("RET"); IP = Pop(); m_segments[CS] = Pop(); break;
 	case 0xCC: CMD_NAME("INT 3"); INT(3);break;
 	case 0xCD: CMD_NAME("INT"); data = GetImm<byte>(); APPEND_HEX_DBG(data); INT(data); break;
@@ -1913,7 +1918,10 @@ opcode:
 	case 0xED: IN_dx<word>(); break;
 	case 0xEE: OUT_dx<byte>(); break;
 	case 0xEF: OUT_dx<word>(); break;
-		
+
+	case 0xF0: m_LOCK = true; StepInternal(); break;
+	case 0xF2: m_REPN = true; StepInternal(); break;
+	case 0xF3: m_REP = true; StepInternal(); break;
 	case 0xF4: CMD_NAME("HLT"); ASSERT(false, "HALT!"); break;
 	case 0xF5: CMD_NAME("CMC"); SetFlag<CF>(!TestFlag<CF>()); break;
 	case 0xF6: Group3<byte>(); break;
@@ -1930,15 +1938,6 @@ opcode:
 	default:
 		UNKNOWN_OPCODE(OPCODE1);
 	}
-
-#ifdef _DEBUG
-	if (logging_state)
-	{
-		m_log.appendf("%s %s %s\n\r", dbg_cmd_address, dbg_cmd_name, dbg_args);
-		printf("%s %s %s\n", dbg_cmd_address, dbg_cmd_name, dbg_args);
-		m_scrollToBottom = true;
-	}
-#endif
 }
 
 template<typename T>

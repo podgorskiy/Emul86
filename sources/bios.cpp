@@ -4,6 +4,7 @@
 #include <chrono>
 #include <ctime>
 
+#define FORCE_ZERO_TIME
 #ifdef FORCE_ZERO_TIME
 #define TIME_ZERO(X) 0
 #else

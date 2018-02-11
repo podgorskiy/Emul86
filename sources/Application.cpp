@@ -18,9 +18,9 @@ int Application::Init()
 	m_cpu.SetInterruptHandler(&m_bios);
 	m_io.ClearMemory();
 	Disk disk;
-	disk.Open("F:/c.img");
+	disk.Open("../c.img");
 	m_io.AddDisk(disk);
-
+	Boot();
 	return EXIT_SUCCESS;
 }
 
@@ -52,12 +52,13 @@ void Application::Update()
 {
 	static bool run = false;
 
-	uint32_t stopAt = -1;// select(0xF000, 0x017C);
+	uint32_t stopAt = -1;// select(0xF000, 0x00E5);
 	if (select(m_cpu.GetSegment(CPU::CS), m_cpu.IP) == stopAt)
 	{
 		run = false;
 	}
 
+#ifdef _DEBUG
 	int doStep = 0;
 	ImGui::Begin("Execution control");
 	if (ImGui::Button("Step"))
@@ -75,21 +76,25 @@ void Application::Update()
 	{
 		doStep = 0;
 	}
-
+#else
+	int doStep = 100000000;
+#endif
 	if (doStep)
 	{
 		std::chrono::time_point<std::chrono::system_clock> framestart = std::chrono::system_clock::now();
 
 		for (int i = 0; i < doStep && !m_io.ISKeyboardHalted(); ++i)
 		{
-			if (i % 500 == 0)
+			if (i % 100000 == 0)
 			{
 				auto current_timestamp = std::chrono::system_clock::now();
 				std::chrono::duration<float> elapsed_time = (current_timestamp - framestart);
 				float seconds = elapsed_time.count();
 				if (seconds > 0.018f)
 				{
+#ifdef _DEBUG
 					ImGui::Text("IPS: %d", (int)(i / seconds));
+#endif
 					break;
 				}
 			}
@@ -103,11 +108,10 @@ void Application::Update()
 #endif
 		}
 	}
-	ImGui::End();
 
 #ifdef _DEBUG
+	ImGui::End();
 	m_cpu.GUI();
-#endif
 
 	ImGui::Begin("Disk");
 	/*
@@ -179,14 +183,13 @@ void Application::Update()
 		m_cpu.SetSegment(CPU::CS, BIOS_SEGMENT);
 	}
 
-#ifdef _DEBUG
 	if (ImGui::Button("TestCPU"))
 	{
 		RunCPUTest();
 	}
-#endif
 
 	ImGui::End();
+#endif
 
 	m_io.DrawScreen(m_scale);
 }
@@ -253,4 +256,20 @@ bool Application::KeyCallback(int key)
 		return true;
 	}
 	return false;
+}
+
+void Application::Boot()
+{
+	int loadAddress = 0x7C00;
+	m_io.ClearMemory();
+	m_bios.InitBIOSDataArea();
+	m_io.KeyCallback(0);
+	int disk = m_io.GetBootableDisk();
+	if (disk != -1)
+	{
+		m_io.ReadDisk(disk, loadAddress, 0, 0, 1, 1);
+	}
+	m_cpu.Reset();
+	m_cpu.IP = loadAddress;
+	m_cpu.SetSegment(CPU::CS, 0);
 }

@@ -139,8 +139,12 @@ int main(int argc, char **argv)
 	// text mode 80x25, 16 colors, 8 pages
 	// character 8x16, so 640x400
 
+#ifdef _DEBUG
 	GLFWwindow* window = glfwCreateWindow(1200 * scale, 800 * scale, "Emul86", nullptr, nullptr);
-	
+#else
+	GLFWwindow* window = glfwCreateWindow(640 * scale, 400 * scale, "Emul86", nullptr, nullptr);
+#endif
+
 	if (!window)
 	{
 		glfwTerminate();

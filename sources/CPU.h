@@ -108,11 +108,6 @@ public:
 		m_flags &= ~(uint16_t)(1 << F);
 	}
 
-
-	//word GetReg(byte i);
-
-	//void SetReg(byte i, word x);
-
 	void Interrupt(int n);
 
 	word IP;
@@ -134,6 +129,8 @@ private:
 		RM  = 0b00000111
 	};
 
+	void StepInternal();
+	
 	template<typename T>
 	void PrepareOperands_RM_REG();
 
@@ -318,6 +315,9 @@ private:
 	void Group0F();
 
 	template<typename T>
+	word GetStep();
+
+	template<typename T>
 	const char* GetRegName(int i);
 
 	const char* const m_segNames[4] = { "ES", "CS", "SS", "DS" };
@@ -360,8 +360,6 @@ private:
 
 	ImGuiTextBuffer m_log;
 	bool m_scrollToBottom;
-	
-	static const uint8_t parity[0x100];
 };
 
 
@@ -380,7 +378,7 @@ template <>
 inline byte CPU::GetRegister<byte>(byte i) const
 {
 	byte* reg8file = (byte*)m_registers;
-	byte _i = ((i * 2) & 0x06) | ((i / 4) & 1);
+	byte _i = 2 * i - (i / 4) * 7;
 	return reg8file[_i];
 }
 
@@ -388,7 +386,7 @@ template <>
 inline void CPU::SetRegister<byte>(byte i, byte v)
 {
 	byte* reg8file = (byte*)m_registers;
-	byte _i = ((i * 2) & 0x06) | ((i / 4) & 1);
+	byte _i = 2 * i - (i / 4) * 7;
 	reg8file[_i] = v;
 }
 
