@@ -118,7 +118,8 @@ T CPU::GetImm()
 {
 	uint32_t address = select(m_segments[CS], IP);
 	IP += sizeof(T);
-	return m_io.Memory<T>(address);
+	T data = m_io.GetMemory<T>(address);
+	return data;
 }
 
 
@@ -219,7 +220,7 @@ T CPU::GetRM()
 	{
 		SetRM_Address();
 
-		return m_io.Memory<T>(ADDRESS);
+		return m_io.GetMemory<T>(ADDRESS);
 	}
 }
 
@@ -243,7 +244,7 @@ void CPU::SetRM(T x, bool computeAddress)
 			SetRM_Address();
 		}
 
-		m_io.Memory<T>(ADDRESS) = (T)x;
+		m_io.SetMemory<T>(ADDRESS, x);
 	}
 }
 
@@ -509,12 +510,12 @@ void CPU::Push(word x)
 {
 	m_registers[SP] -= 2;
 	uint32_t address = select(m_segments[SS], m_registers[SP]);
-	m_io.Memory<word>(address) = x;
+	m_io.SetMemory<word>(address, x);
 }
 word CPU::Pop()
 {
 	uint32_t address = select(m_segments[SS], m_registers[SP]);
-	word x = m_io.Memory<word>(address);
+	word x = m_io.GetMemory<word>(address);
 	m_registers[SP] += 2;
 	return x;
 }
@@ -687,7 +688,7 @@ void CPU::MOV_a_off()
 	APPEND_DBG(":");
 	APPEND_HEX_DBG(src_offset);
 	APPEND_DBG("]");
-	OPERAND_A = m_io.Memory<T>(select(src_seg, src_offset));
+	OPERAND_A = m_io.GetMemory<T>(select(src_seg, src_offset));
 	SetRegister<T>(0, OPERAND_A);
 }
 
@@ -708,7 +709,7 @@ void CPU::MOV_off_a()
 	APPEND_HEX_DBG(dst_offset);
 	APPEND_DBG("], ");
 	APPEND_DBG_REGT(0, T);
-	m_io.Memory<T>(select(dst_seg, dst_offset)) = GetRegister<T>(0);
+	m_io.SetMemory<T>(select(dst_seg, dst_offset), GetRegister<T>(0));
 }
 
 template<>
@@ -975,7 +976,7 @@ void CPU::LODS()
 	for (int i = 0; i < times; ++i)
 	{
 		ADDRESS = segment + m_registers[SI];
-		OPERAND_A = m_io.Memory<T>(ADDRESS);
+		OPERAND_A = m_io.GetMemory<T>(ADDRESS);
 		SetRegister<T>(0, OPERAND_A);
 		m_registers[SI] += GetStep<T>();
 
@@ -1012,7 +1013,7 @@ void CPU::STOS()
 		ADDRESS = GetSegment(ES) << 4;
 		ADDRESS += m_registers[DI];
 
-		m_io.Memory<T>(ADDRESS) = OPERAND_A;
+		m_io.SetMemory<T>(ADDRESS, OPERAND_A);
 		m_registers[DI] += step;
 
 #ifdef _DEBUG
@@ -1048,7 +1049,7 @@ void CPU::SCAS()
 		ADDRESS = GetSegment(ES) << 4;
 		ADDRESS += m_registers[DI];
 
-		OPERAND_B = m_io.Memory<T>(ADDRESS);
+		OPERAND_B = m_io.GetMemory<T>(ADDRESS);
 		m_registers[DI] += step;
 
 		RESULT = OPERAND_A - OPERAND_B;
@@ -1105,8 +1106,8 @@ void CPU::CMPS()
 		APPEND_DBG(":");
 		APPEND_DBG_REGW(DI);
 		word dst_offset = GetRegister<word>(DI);
-		OPERAND_A = m_io.Memory<T>(select(src_seg, src_offset));
-		OPERAND_B = m_io.Memory<T>(select(dst_seg, dst_offset));
+		OPERAND_A = m_io.GetMemory<T>(select(src_seg, src_offset));
+		OPERAND_B = m_io.GetMemory<T>(select(dst_seg, dst_offset));
 		RESULT = OPERAND_A - OPERAND_B;
 		UpdateFlags_CFOFAF_sub<T>();
 		UpdateFlags_SFZFPF<T>();
@@ -1163,8 +1164,8 @@ void CPU::MOVS()
 		APPEND_DBG_REGW(DI);
 		APPEND_DBG("]");
 		word dst_offset = GetRegister<word>(DI);
-		T w = m_io.Memory<T>(select(src_seg, src_offset));
-		m_io.Memory<T>(select(dst_seg, dst_offset)) = w;
+		T w = m_io.GetMemory<T>(select(src_seg, src_offset));
+		m_io.SetMemory<T>(select(dst_seg, dst_offset), w);
 
 		m_registers[SI] += step;
 		m_registers[DI] += step;
@@ -1235,7 +1236,7 @@ void CPU::INS()
 	word step = GetStep<T>();
 	for (int i = 0; i < times; ++i)
 	{
-		m_io.Memory<T>(select(GetSegment(ES), GetRegister<word>(DI))) = m_io.Port<T>(GetRegister<word>(DX));
+		m_io.SetMemory<T>(select(GetSegment(ES), GetRegister<word>(DI)), m_io.Port<T>(GetRegister<word>(DX)));
 
 		m_registers[SI] += step;
 		m_registers[DI] += step;
@@ -1265,7 +1266,7 @@ void CPU::OUTS()
 		{
 			offsetreg = m_segmentOverride;
 		}
-		m_io.Port<T>(GetRegister<word>(DX)) = m_io.Memory<T>(select(GetSegment(offsetreg), GetRegister<word>(SI)));
+		m_io.Port<T>(GetRegister<word>(DX)) = m_io.GetMemory<T>(select(GetSegment(offsetreg), GetRegister<word>(SI)));
 
 		m_registers[SI] += step;
 		m_registers[DI] += step;
@@ -1791,8 +1792,8 @@ void CPU::StepInternal()
 		GetRegister<word>();
 		APPEND_DBG(", ");
 		SetRM_Address();
-		OPERAND_A = m_io.Memory<word>(ADDRESS);
-		OPERAND_B = m_io.Memory<word>(ADDRESS + 2);
+		OPERAND_A = m_io.GetMemory<word>(ADDRESS);
+		OPERAND_B = m_io.GetMemory<word>(ADDRESS + 2);
 		SetRegister<word>(OPERAND_A);
 		SetSegment(ES, OPERAND_B);
 		break;
@@ -1803,8 +1804,8 @@ void CPU::StepInternal()
 		GetRegister<word>();
 		APPEND_DBG(", ");
 		SetRM_Address();
-		OPERAND_A = m_io.Memory<word>(ADDRESS);
-		OPERAND_B = m_io.Memory<word>(ADDRESS + 2);
+		OPERAND_A = m_io.GetMemory<word>(ADDRESS);
+		OPERAND_B = m_io.GetMemory<word>(ADDRESS + 2);
 		SetRegister<word>(OPERAND_A);
 		SetSegment(DS, OPERAND_B);
 		break;
@@ -1829,7 +1830,7 @@ void CPU::StepInternal()
 			while (--level)
 			{
 				bp -= 2;
-				word temp16 = m_io.Memory<word>(select(GetSegment(SS), bp));
+				word temp16 = m_io.GetMemory<word>(select(GetSegment(SS), bp));
 				Push(temp16);
 			}
 
@@ -1845,7 +1846,7 @@ void CPU::StepInternal()
 	{
 		CMD_NAME("LEAVE");
 		word bp = GetRegister<word>(BP);
-		word value = m_io.Memory<word>(select(GetSegment(SS), bp));
+		word value = m_io.GetMemory<word>(select(GetSegment(SS), bp));
 		SetRegister<word>((byte)SP, bp + 2);
 		SetRegister<word>(BP, value + 0);
 	}
@@ -1896,7 +1897,7 @@ void CPU::StepInternal()
 				offsetreg = m_segmentOverride;
 			}
 			word seg = GetSegment(offsetreg);
-			SetRegister<byte>(AL, m_io.Memory<byte>(select(seg, GetRegister<word>(BX) + word(GetRegister<byte>(AL)))));
+			SetRegister<byte>(AL, m_io.GetMemory<byte>(select(seg, GetRegister<word>(BX) + word(GetRegister<byte>(AL)))));
 		}
 		break;
 
@@ -2130,7 +2131,7 @@ void CPU::Group45()
 {
 	MODREGRM = GetImm<byte>();
 	OPERAND_A = GetRM<T>();
-	OPERAND_B = m_io.Memory<word>(ADDRESS + 2);
+	OPERAND_B = m_io.GetMemory<word>(ADDRESS + 2);
 
 	OPCODE2 = (MODREGRM & REG) >> 3;
 
@@ -2261,8 +2262,8 @@ void CPU::Interrupt(int n)
 	Push(m_flags);
 	Push(m_segments[CS]);
 	Push(IP);
-	IP = m_io.Memory<word>(n * 4);
-	m_segments[CS] = m_io.Memory<word>(n * 4 + 2);
+	IP = m_io.GetMemory<word>(n * 4);
+	m_segments[CS] = m_io.GetMemory<word>(n * 4 + 2);
 }
 
 void CPU::GUI()

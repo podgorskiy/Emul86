@@ -44,10 +44,10 @@ public:
 	uint32_t MemGetD(word offset, word location) const;
 
 	template<typename T>
-	T& Memory(uint32_t address);
+	void SetMemory(uint32_t address, T x);
 
 	template<typename T>
-	const T& Memory(uint32_t address) const;
+	T GetMemory(uint32_t address) const;
 
 	template<typename T>
 	inline T& Port(uint32_t address);
@@ -79,28 +79,30 @@ private:
 #define A20_GATE(X) X
 #endif
 
+
 template<>
-inline word& IO::Memory<word>(uint32_t address)
+inline void IO::SetMemory<byte>(uint32_t address, byte x)
 {
-	return *reinterpret_cast<word*>(m_ram + A20_GATE(address));
+	m_ram[A20_GATE(address)] = x;
 }
 
 template<>
-inline const word& IO::Memory<word>(uint32_t address) const
+inline byte IO::GetMemory<byte>(uint32_t address) const
 {
-	return *reinterpret_cast<word*>(m_ram + A20_GATE(address));
+	return m_ram[A20_GATE(address)];
 }
 
 template<>
-inline byte& IO::Memory<byte>(uint32_t address)
+inline void IO::SetMemory<word>(uint32_t address, word x)
 {
-	return *reinterpret_cast<byte*>(m_ram + A20_GATE(address));
+	m_ram[A20_GATE(address)] = x & 0xFF;
+	m_ram[A20_GATE(address) + 1] = (x & 0xFF00) >> 8;
 }
 
 template<>
-inline const byte& IO::Memory<byte>(uint32_t address) const
+inline word IO::GetMemory<word>(uint32_t address) const
 {
-	return *reinterpret_cast<byte*>(m_ram + A20_GATE(address));
+	return ((word)m_ram[A20_GATE(address)]) | (((word)m_ram[A20_GATE(address) + 1]) << 8);
 }
 
 template<>
