@@ -1,8 +1,9 @@
 #include <string>
+#include <stdarg.h>
+#include "_assert.h"
 
 #ifdef _WIN32
 #include <windows.h>
-#include "_assert.h"
 __declspec(thread) HHOOK DebugMessageBoxHook;
 
 static LRESULT CALLBACK CustomMessageBoxProc(INT nCode, WPARAM wParam, LPARAM lParam)
@@ -68,7 +69,7 @@ static Assert::result ShowMessageBox(const char *file, int line, const char *con
 	}
 	return Assert::result_break;
 #else
-	return assert::a;
+	return Assert::result_break;
 #endif
 }
 
