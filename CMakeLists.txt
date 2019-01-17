@@ -101,7 +101,7 @@ endif (OPENGL_FOUND)
 #####################################################################
 set(IMGUI_DIR libs/imgui)
 file(GLOB IMGUI_SOURCES ${IMGUI_DIR}/*.cpp ${IMGUI_DIR}/*.h )
-add_library(imgui ${IMGUI_SOURCES} ${IMGUI_DIR}/extra_fonts/binary_to_compressed_c.cpp ${IMGUI_DIR}/examples/opengl3_example/imgui_impl_glfw_gl3.cpp)
+add_library(imgui ${IMGUI_SOURCES})
 
 ##############################################################
 # Main sources

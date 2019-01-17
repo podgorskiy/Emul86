@@ -1,16 +1,105 @@
 #include "Disk.h"
 #include <cstring>
+#include <cassert>
 
 enum
 {
 	SectorSize = 512
 };
 
+class IO
+{
+public:
+	virtual ~IO() {};
+	virtual void Init(const char* path) = 0;
+	virtual void Read(char* dst, uint32_t location, uint32_t size) const = 0;
+	virtual void Write(const char* dst, uint32_t location, uint32_t size) = 0;
+	
+	size_t GetSize() const
+	{
+		return m_size;
+	}
+
+	template<typename T>
+	T Read(uint32_t location) const
+	{
+		T data;
+		Read((char*)&data, location, sizeof(T));
+		return data;
+	}
+
+protected:
+	size_t m_size;
+};
+
+class IOMemory: public IO
+{
+public:
+	virtual void Init(const char* path) override
+	{
+		FILE* file = fopen(path, "rb");
+		fseek(file, 0L, SEEK_END);
+		m_size = ftell(file);
+		fseek(file, 0L, SEEK_SET);
+		m_data.reset(new char[m_size  +1024]);
+		fread(m_data.get(), m_size, 1, file);
+		fclose(file);
+	}
+
+	virtual void Read(char* dst, uint32_t location, uint32_t size) const override
+	{
+		assert(location + size <= m_size);
+		memcpy(dst, m_data.get() + location, size);
+	}
+
+	virtual void Write(const char* src, uint32_t location, uint32_t size) override
+	{
+		assert(location + size <= m_size);
+		memcpy(m_data.get() + location, src, size);
+	}
+
+private:
+	std::shared_ptr<char> m_data;
+};
+
+class IODisk: public IO
+{
+public:
+	virtual void Init(const char* path) override
+	{
+		m_file = fopen(path, "rb+");
+		fseek(m_file, 0L, SEEK_END);
+		m_size = ftell(m_file);
+		fseek(m_file, 0L, SEEK_SET);
+	}
+
+	~IODisk()
+	{
+		fclose(m_file);
+	}
+
+	virtual void Read(char* dst, uint32_t location, uint32_t size) const override
+	{
+		assert(location + size <= m_size);
+		fseek(m_file, location, SEEK_SET);
+		fread(dst, size, 1, m_file);
+	}
+
+	virtual void Write(const char* src, uint32_t location, uint32_t size) override
+	{
+		assert(location + size <= m_size);
+		fseek(m_file, location, SEEK_SET);
+		fwrite(src, size, 1, m_file);
+	}
+
+private:
+	FILE* m_file;
+};
+
 struct DiskImpl
 {
-	DiskImpl();
+	DiskImpl(bool memory);
 	~DiskImpl();
-	void Close();
 
 	Disk::BIOS_ParameterBlock m_biosBlock;
 	size_t m_size;
@@ -21,97 +110,71 @@ struct DiskImpl
 	uint16_t m_physical_secPerTrk;
 	uint16_t m_physical_numHeads;
 	bool m_doTranslation;
-	FILE* m_file;
+	IO* m_io;
 };
 
-
-Disk::Disk(): m_impl(new DiskImpl())
-{}
-
-
-DiskImpl::DiskImpl() : m_bootable(false), m_floppy(false)
-{}
-
+DiskImpl::DiskImpl(bool memory) : m_bootable(false), m_floppy(false)
+{
+	if (memory)
+	{
+		m_io = new IOMemory();
+	}
+	else
+	{
+		m_io = new IODisk();
+	}
+}
 
 DiskImpl::~DiskImpl()
 {
-	Close();
+	delete m_io;
 }
 
-
-void DiskImpl::Close()
-{
-	fclose(m_file);
-}
-
-
-uint8_t Disk::ReadB(uint32_t location)
-{
-	uint8_t data;
-	fseek(m_impl->m_file, location, SEEK_SET);
-	fread(&data, 1, 1, m_impl->m_file);
-	return data;
-}
-
-
-uint16_t Disk::ReadW(uint32_t location)
-{
-	uint16_t data;
-	fseek(m_impl->m_file, location, SEEK_SET);
-	fread(&data, 2, 1, m_impl->m_file);
-	return data;
-}
-
-
-uint32_t Disk::ReadDW(uint32_t location)
-{
-	uint32_t data;
-	fseek(m_impl->m_file, location, SEEK_SET);
-	fread(&data, 4, 1, m_impl->m_file);
-	return data;
-}
-
+Disk::Disk()
+{}
 
 void Disk::ReadBIOS_ParameterBlock(uint32_t offset)
 {
 	BIOS_ParameterBlock& block = m_impl->m_biosBlock;
-	block.bytsPerSec = ReadW(0x00B + offset);
-	block.secPerClus = ReadB(0x00D + offset);
-	block.totSec16 = ReadW(0x013 + offset);
+	block.bytsPerSec = m_impl->m_io->Read<uint16_t>(0x00B + offset);
+	block.secPerClus = m_impl->m_io->Read<uint8_t>(0x00D + offset);
+	block.totSec16 = m_impl->m_io->Read<uint16_t>(0x013 + offset);
 	if (block.totSec16 == 0)
 	{
-		block.totSec16 = ReadDW(0x020 + offset);
+		block.totSec16 = m_impl->m_io->Read<uint32_t>(0x020 + offset);
 	}
-	block.secPerTrk = ReadW(0x018 + offset);
-	block.numHeads = ReadW(0x01A + offset);
-	block.drvNum = ReadB(0x024 + offset);
-	block.volID = ReadDW(0x027 + offset);
+	block.secPerTrk = m_impl->m_io->Read<uint16_t>(0x018 + offset);
+	block.numHeads = m_impl->m_io->Read<uint16_t>(0x01A + offset);
+	block.drvNum = m_impl->m_io->Read<uint8_t>(0x024 + offset);
+	block.volID = m_impl->m_io->Read<uint32_t>(0x027 + offset);
 	memset(block.volLabel, 0, sizeof(block.volLabel));
 	memset(block.fileSysType, 0, sizeof(block.fileSysType));
 	for (int i = 0; i < 11; ++i)
 	{
-		block.volLabel[i] = ReadB(0x2B + i);
+		block.volLabel[i] = m_impl->m_io->Read<uint8_t>(0x2B + i);
 	}
 	for (int i = 0; i < 8; ++i)
 	{
-		block.fileSysType[i] = ReadB(0x36 + i);
+		block.fileSysType[i] = m_impl->m_io->Read<uint8_t>(0x36 + i);
 	}
 }
 
 
-void Disk::Open(const char * path)
+void Disk::Open(const char * path, bool inmemory)
 {
-	BIOS_ParameterBlock& block = m_impl->m_biosBlock;
-	m_impl->m_file = fopen(path, "rb+");
-	fseek(m_impl->m_file, 0L, SEEK_END);
-	m_impl->m_size = ftell(m_impl->m_file);
-	fseek(m_impl->m_file, 0L, SEEK_SET);
+	m_impl.reset(new DiskImpl(inmemory));
+
+	m_impl->m_io->Init(path);
+
+	m_impl->m_size = m_impl->m_io->GetSize();
 
 	// Check for boot sector signature
-	m_impl->m_bootable = ReadW(0x1FE) == 0xAA55;
+	m_impl->m_bootable = m_impl->m_io->Read<uint16_t>(0x1FE) == 0xAA55;
 
 	// Check if it is a floppy drive image
 	ReadBIOS_ParameterBlock(0);
+	BIOS_ParameterBlock& block = m_impl->m_biosBlock;
+
 	if (block.bytsPerSec == SectorSize)
 	{
 		// Floppy iamge
@@ -148,6 +211,8 @@ void Disk::Open(const char * path)
 
 		m_impl->m_doTranslation = block.numHeads != m_impl->m_physical_numHeads;
 	}
+
+	free(malloc(100000));
 }
 
 
@@ -163,7 +228,7 @@ bool Disk::Read(char* dst, uint16_t cylinder, uint8_t head, uint8_t sector, uint
 	uint32_t location = SectorSize * ToLBA(cylinder, head, sector);
 	if (location + SectorSize * sectorCount < m_impl->m_size)
 	{
-		Read(dst, location, sectorCount * SectorSize);
+		m_impl->m_io->Read(dst, location, sectorCount * SectorSize);
 		return true;
 	}
 	return false;
@@ -175,7 +240,7 @@ bool Disk::Write(const char* dst, uint16_t cylinder, uint8_t head, uint8_t secto
 	uint32_t location = SectorSize * ToLBA(cylinder, head, sector);
 	if (location + SectorSize * sectorCount < m_impl->m_size)
 	{
-		Write(dst, location, sectorCount * SectorSize);
+		m_impl->m_io->Write(dst, location, sectorCount * SectorSize);
 		return true;
 	}
 	return false;
@@ -195,23 +260,8 @@ bool Disk::IsFloppyDrive() const
 
 void Disk::Close()
 {
-	m_impl->Close();
+	m_impl = nullptr;
 }
-
-
-void Disk::Read(char* dst, uint32_t location, uint32_t size)
-{
-	fseek(m_impl->m_file, location, SEEK_SET);
-	fread(dst, size, 1, m_impl->m_file);
-}
-
-
-void Disk::Write(const char* dst, uint32_t location, uint32_t size)
-{
-	fseek(m_impl->m_file, location, SEEK_SET);
-	fwrite(dst, size, 1, m_impl->m_file);
-}
-
 
 const Disk::BIOS_ParameterBlock& Disk::GetBiosBlock()
 {

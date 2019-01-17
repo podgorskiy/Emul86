@@ -2,6 +2,7 @@
 #include "Disk.h"
 #include "common.h"
 #include <vector>
+#include <list>
 #include <chrono>
 
 class IO
@@ -11,9 +12,10 @@ public:
 	void DrawScreen(int m_displayScale);
 
 	// Keyboard
+	std::pair<bool, word> UpdateKeyState();
 	void KeyboardHalt();
 	bool ISKeyboardHalted() const;
-	bool KeyCallback(int c);
+	bool SetCurrentKey(int c);
 	void PushKey(int c);
 	bool HasKeyToPop() const;
 	int PopKey();
@@ -62,6 +64,7 @@ public:
 private:
 	std::vector<Disk> m_floppyDrives;
 	std::vector<Disk> m_hardDrives;
+	std::list<int> keyBuffer;
 
 	byte* m_ram;
 	byte* m_port;

@@ -6,7 +6,6 @@
 #include <sstream>
 #include <string>
 
-
 Application::Application(): m_cpu(m_io), m_bios(m_io, m_cpu)
 {
 }
@@ -18,7 +17,7 @@ int Application::Init()
 	m_cpu.SetInterruptHandler(&m_bios);
 	m_io.ClearMemory();
 	Disk disk;
-	disk.Open("../c.img");
+	disk.Open("c.img", true);
 	m_io.AddDisk(disk);
 	Boot();
 	return EXIT_SUCCESS;
@@ -50,63 +49,75 @@ IO& Application::GetIO()
 
 void Application::Update()
 {
-	static bool run = false;
+	std::pair<bool, word> cpu_ax = m_io.UpdateKeyState();
+	if (cpu_ax.first)
+	{
+		m_cpu.SetRegister(CPU::AX, cpu_ax.second);
+	}
 
+	static bool run = false;
+	bool singleStep = false;
+
+#ifdef _DEBUG
 	uint32_t stopAt = -1;// select(0xF000, 0x00E5);
 	if (select(m_cpu.GetSegment(CPU::CS), m_cpu.IP) == stopAt)
 	{
 		run = false;
 	}
 
-#ifdef _DEBUG
-	int doStep = 0;
 	ImGui::Begin("Execution control");
 	if (ImGui::Button("Step"))
 	{
-		doStep = 1;
+		run = true;
+		singleStep = true;
 	}
 	ImGui::SameLine();
 	ImGui::Checkbox("Run", &run);
-	if (run)
-	{
-		doStep = 100000000;
-	}
 
-	if (m_io.ISKeyboardHalted())
-	{
-		doStep = 0;
-	}
 #else
-	int doStep = 100000000;
+	run = true;
 #endif
-	if (doStep)
-	{
-		std::chrono::time_point<std::chrono::system_clock> framestart = std::chrono::system_clock::now();
 
-		for (int i = 0; i < doStep && !m_io.ISKeyboardHalted(); ++i)
+	static int64_t instructions = 0;
+	static float seconds = 0;
+	static int IPS = 0;
+
+	std::chrono::time_point<std::chrono::system_clock> framestart = std::chrono::system_clock::now();
+
+	for (int i = 0; run && !m_io.ISKeyboardHalted(); ++i)
+	{
+		if (i % 200 == 0)
 		{
-			if (i % 100000 == 0)
+			auto current_timestamp = std::chrono::system_clock::now();
+			std::chrono::duration<float> elapsed_time = (current_timestamp - framestart);
+			float elapsed = elapsed_time.count();
+			if (elapsed > 0.018f)
 			{
-				auto current_timestamp = std::chrono::system_clock::now();
-				std::chrono::duration<float> elapsed_time = (current_timestamp - framestart);
-				float seconds = elapsed_time.count();
-				if (seconds > 0.018f)
+				seconds += elapsed;
+
+				if (seconds > 1.0f)
 				{
-#ifdef _DEBUG
-					ImGui::Text("IPS: %d", (int)(i / seconds));
-#endif
-					break;
+					IPS = (int)(instructions / seconds);
+					instructions = 0;
+					seconds = 0;
+					printf("IPS: %d\n", (int)IPS);
 				}
-			}
-			m_cpu.Step();
 #ifdef _DEBUG
-			if (select(m_cpu.GetSegment(CPU::CS), m_cpu.IP) == stopAt)
-			{
-				run = false;
+				ImGui::Text("IPS: %d", (int)IPS);
+#endif
 				break;
 			}
-#endif
 		}
+		m_cpu.Step();
+		instructions += 1;
+#ifdef _DEBUG
+		if (select(m_cpu.GetSegment(CPU::CS), m_cpu.IP) == stopAt || singleStep)
+		{
+			run = false;
+			singleStep = false;
+			break;
+		}
+#endif
 	}
 
 #ifdef _DEBUG
@@ -114,6 +125,7 @@ void Application::Update()
 	m_cpu.GUI();
 
 	ImGui::Begin("Disk");
+	
 	/*
 	if (ImGui::Button("Mount Dos6.22"))
 	{
@@ -155,7 +167,7 @@ void Application::Update()
 	{
 		m_io.ClearMemory();
 		m_bios.InitBIOSDataArea();
-		m_io.KeyCallback(0);
+		m_io.SetCurrentKey(0);
 		int disk = m_io.GetBootableDisk();
 		if (disk != -1)
 		{
@@ -169,7 +181,7 @@ void Application::Update()
 	if (ImGui::Button("Load testrom"))
 	{
 		m_bios.InitBIOSDataArea();
-		m_io.KeyCallback(0);
+		m_io.SetCurrentKey(0);
 		FILE* f = fopen("../testrom", "rb");
 		fseek(f, 0L, SEEK_END);
 		size_t size = ftell(f);
@@ -246,24 +258,12 @@ void Application::RunCPUTest()
 	}
 }
 
-
-bool Application::KeyCallback(int key)
-{
-	bool was_halted = m_io.KeyCallback(key);
-	if (was_halted)
-	{
-		m_cpu.SetRegister<word>(CPU::AX, key);
-		return true;
-	}
-	return false;
-}
-
 void Application::Boot()
 {
 	int loadAddress = 0x7C00;
 	m_io.ClearMemory();
 	m_bios.InitBIOSDataArea();
-	m_io.KeyCallback(0);
+	m_io.SetCurrentKey(0);
 	int disk = m_io.GetBootableDisk();
 	if (disk != -1)
 	{

@@ -13,11 +13,9 @@ public:
 
 	int Init();
 	void Update();
-	void DrawScreen();
 	void LoadData(uint32_t dest, const char* source, uint32_t size);
 	void Resize(int width, int height);
 	void SetScale(int scale);
-	bool KeyCallback(int key);
 	void Boot();
 
 	IO& GetIO();

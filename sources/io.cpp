@@ -4,6 +4,8 @@
 #include <string.h>
 
 
+SimpleText* st = nullptr;
+
 void IO::Init()
 {
 	m_ram = new byte[0x100000];
@@ -36,9 +38,11 @@ inline SimpleText::Color ToSimpleTextColor(char x)
 
 void IO::DrawScreen(int displayScale)
 {
-	static SimpleText st;
-
-	st.Begin();
+	if (st == nullptr)
+	{
+		st = new SimpleText;
+	}
+	st->Begin();
 	int screenWidth = MemGetW(BIOS_DATA_OFFSET, NUMBER_OF_SCREEN_COLUMNS);
 	int screenHeight = 25;
 	int active_page = MemGetB(BIOS_DATA_OFFSET, ACTIVE_DISPLAY_PAGE);
@@ -58,10 +62,10 @@ void IO::DrawScreen(int displayScale)
 
 			SimpleText::Color forgroundColorST = ToSimpleTextColor(forgroundColor);
 			SimpleText::Color backgroundColorST = ToSimpleTextColor(backgroundColor);
-			st.SetTextSize((SimpleText::FontSize)displayScale);
-			st.SetColor(SimpleText::TEXT_COLOR, forgroundColorST, forgroundBright ? SimpleText::BOLD : SimpleText::NORMAL);
-			st.SetColor(SimpleText::BACKGROUND_COLOR, backgroundColorST, backgroundBright ? SimpleText::BOLD : SimpleText::NORMAL);
-			st.PutSymbol(symbol, clm * 8 * displayScale, row * 16 * displayScale);
+			st->SetTextSize((SimpleText::FontSize)displayScale);
+			st->SetColor(SimpleText::TEXT_COLOR, forgroundColorST, forgroundBright ? SimpleText::BOLD : SimpleText::NORMAL);
+			st->SetColor(SimpleText::BACKGROUND_COLOR, backgroundColorST, backgroundBright ? SimpleText::BOLD : SimpleText::NORMAL);
+			st->PutSymbol(symbol, clm * 8 * displayScale, row * 16 * displayScale);
 		}
 	}
 
@@ -74,20 +78,20 @@ void IO::DrawScreen(int displayScale)
 	auto now = std::chrono::system_clock::now();
 	std::chrono::duration<double> elapsed_seconds = now - m_start;
 
-	st.End();
+	st->End();
 	if (!(bottom & 0x20) && ((int)(5 * elapsed_seconds.count())) % 2)
 	{
-		st.EnableBlending(true);
-		st.Begin();
+		st->EnableBlending(true);
+		st->Begin();
 		char attribute = m_ram[p + ycurs * screenWidth * 2 + xcurs * 2 + screenHeight * screenWidth * 2 * active_page + 1];
 		char forgroundColor = attribute & 0x07;
 		bool forgroundBright = (attribute & 0x08) != 0;
 		SimpleText::Color forgroundColorST = ToSimpleTextColor(forgroundColor);
-		st.SetColor(SimpleText::TEXT_COLOR, forgroundColorST, forgroundBright ? SimpleText::BOLD : SimpleText::NORMAL);
-		st.SetColor(SimpleText::BACKGROUND_COLOR, 0, 0, 0, 0);
-		st.PutSymbol('_', xcurs * 8 * displayScale, ycurs * 16 * displayScale);
-		st.End();
-		st.EnableBlending(false);
+		st->SetColor(SimpleText::TEXT_COLOR, forgroundColorST, forgroundBright ? SimpleText::BOLD : SimpleText::NORMAL);
+		st->SetColor(SimpleText::BACKGROUND_COLOR, 0, 0, 0, 0);
+		st->PutSymbol('_', xcurs * 8 * displayScale, ycurs * 16 * displayScale);
+		st->End();
+		st->EnableBlending(false);
 	}
 
 	MemStoreD(BIOS_DATA_OFFSET, 0x006C, int(elapsed_seconds.count() * 1193180 / 65536));
@@ -181,6 +185,50 @@ void IO::DisableA20Gate()
 bool IO::GetA20GateStatus() const
 {
 	return A20 == 0xFFFFFF;
+}
+
+
+std::pair<bool, word> IO::UpdateKeyState()
+{
+	bool write_to_ax = false;
+	word ax_value_to_write = 0;
+
+	if (keyBuffer.size() > 0)
+	{
+		if (keyBuffer.front() != 0)
+		{
+			int key = keyBuffer.front();
+			bool was_halted = SetCurrentKey(key);
+			if (was_halted)
+			{
+				write_to_ax = true;
+				ax_value_to_write = key;
+			}
+
+			if (was_halted)
+			{
+				keyBuffer.pop_front();
+				if (keyBuffer.size() != 0)
+				{
+					SetCurrentScanCode(keyBuffer.front());
+				}
+				else
+				{
+					ClearCurrentCode();
+				}
+				PopKey();
+			}
+		}
+		else
+		{
+			keyBuffer.pop_front();
+		}
+	}
+	else
+	{
+		ClearCurrentCode();
+	}
+	return std::make_pair(write_to_ax, ax_value_to_write);
 }
 
 
@@ -308,7 +356,7 @@ int IO::GetBootableDisk() const
 }
 
 
-bool IO::KeyCallback(int c)
+bool IO::SetCurrentKey(int c)
 {
 	m_currentKeyCode = c;
 	MemStoreB(BIOS_DATA_OFFSET, 0xBA, c >> 8);
@@ -335,6 +383,8 @@ void IO::PushKey(int c)
 		tail = 0x1E;
 	}
 	MemStoreW(BIOS_DATA_OFFSET, 0x1C, tail);
+
+	keyBuffer.push_back(c);
 }
 
 
