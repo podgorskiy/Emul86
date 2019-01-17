@@ -14,10 +14,10 @@ Application::Application(): m_cpu(m_io), m_bios(m_io, m_cpu)
 int Application::Init()
 {
 	m_io.Init();
-	m_cpu.SetInterruptHandler(&m_bios);
 	m_io.ClearMemory();
-	Disk disk;
-	disk.Open("c.img", true);
+	m_cpu.SetInterruptHandler(&m_bios);
+
+	Disk disk;	disk.Open("c.img", true);
 	m_io.AddDisk(disk);
 	Boot();
 	return EXIT_SUCCESS;

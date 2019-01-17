@@ -17,10 +17,6 @@ public:
 	bool ISKeyboardHalted() const;
 	bool SetCurrentKey(int c);
 	void PushKey(int c);
-	bool HasKeyToPop() const;
-	int PopKey();
-	void ClearCurrentCode();
-	void SetCurrentScanCode(int c);
 	void SetKeyFlags(bool rightShift, bool leftShift, bool CTRL, bool alt);
 	int GetCurrentKeyCode() const;
 
@@ -62,6 +58,11 @@ public:
 	bool GetA20GateStatus() const;
 
 private:
+	// Keyboard
+	bool HasKeyToPop() const;
+	int PopKey();
+	void ClearCurrentCode();
+
 	std::vector<Disk> m_floppyDrives;
 	std::vector<Disk> m_hardDrives;
 	std::list<int> keyBuffer;
@@ -76,10 +77,12 @@ private:
 	std::chrono::time_point<std::chrono::system_clock> m_start;
 };
 
+//#define ENABLE_A20
+
 #ifdef ENABLE_A20
 #define A20_GATE(X) (X & A20)
 #else
-#define A20_GATE(X) X
+#define A20_GATE(X) (X & 0xFFFFF)
 #endif
 
 
@@ -111,6 +114,7 @@ inline word IO::GetMemory<word>(uint32_t address) const
 template<>
 inline byte& IO::Port<byte>(uint32_t address)
 {
+	//printf("port 0x%s\n", n2hexstr(address).c_str());
 	return *reinterpret_cast<byte*>(m_ram + A20_GATE(address));
 }
 

@@ -8,7 +8,7 @@ SimpleText* st = nullptr;
 
 void IO::Init()
 {
-	m_ram = new byte[0x100000];
+	m_ram = new byte[0x200000];
 	m_port = new byte[0x10000];
 	ClearMemory();
 	m_currentKeyCode = 0;
@@ -161,7 +161,7 @@ uint32_t IO::MemGetD(word offset, word location) const
 
 void IO::ClearMemory()
 {
-	memset(m_ram, 0, 0x100000);
+	memset(m_ram, 0, 0x200000);
 	memset(m_port, 0, 0x10000);
 }
 
@@ -172,7 +172,7 @@ byte * IO::GetRamRawPointer()
 
 void IO::EnableA20Gate()
 {
-	A20 = 0xFFFFFF;
+	A20 = 0x1FFFFF;
 }
 
 
@@ -184,7 +184,7 @@ void IO::DisableA20Gate()
 
 bool IO::GetA20GateStatus() const
 {
-	return A20 == 0xFFFFFF;
+	return A20 == 0x1FFFFF;
 }
 
 
@@ -208,11 +208,7 @@ std::pair<bool, word> IO::UpdateKeyState()
 			if (was_halted)
 			{
 				keyBuffer.pop_front();
-				if (keyBuffer.size() != 0)
-				{
-					SetCurrentScanCode(keyBuffer.front());
-				}
-				else
+				if (keyBuffer.size() == 0)
 				{
 					ClearCurrentCode();
 				}
@@ -253,12 +249,6 @@ int IO::GetCurrentKeyCode() const
 void IO::ClearCurrentCode()
 {
 	m_currentKeyCode = 0;
-}
-
-
-void IO::SetCurrentScanCode(int c)
-{
-	m_currentKeyCode = c;
 }
 
 

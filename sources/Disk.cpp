@@ -1,16 +1,18 @@
 #include "Disk.h"
-#include <cstring>
-#include <cassert>
+#include <string.h>
+#include <assert.h>
+#include <string>
 
 enum
 {
 	SectorSize = 512
 };
 
-class IO
+class IOBase
 {
 public:
-	virtual ~IO() {};
+	IOBase() : m_size(0) {}
+	virtual ~IOBase() {}
 	virtual void Init(const char* path) = 0;
 	virtual void Read(char* dst, uint32_t location, uint32_t size) const = 0;
 	virtual void Write(const char* dst, uint32_t location, uint32_t size) = 0;
@@ -32,39 +34,50 @@ protected:
 	size_t m_size;
 };
 
-class IOMemory: public IO
+class IOMemory: public IOBase
 {
 public:
+	IOMemory() : m_data(nullptr) 
+	{}
+
+	virtual ~IOMemory()
+	{
+		delete m_data;
+	}
+
 	virtual void Init(const char* path) override
 	{
 		FILE* file = fopen(path, "rb");
 		fseek(file, 0L, SEEK_END);
 		m_size = ftell(file);
 		fseek(file, 0L, SEEK_SET);
-		m_data.reset(new char[m_size  +1024]);
-		fread(m_data.get(), m_size, 1, file);
+		m_data = new char[m_size  +1024];
+		fread(m_data, m_size, 1, file);
 		fclose(file);
 	}
 
 	virtual void Read(char* dst, uint32_t location, uint32_t size) const override
 	{
 		assert(location + size <= m_size);
-		memcpy(dst, m_data.get() + location, size);
+		memcpy(dst, m_data + location, size);
 	}
 
 	virtual void Write(const char* src, uint32_t location, uint32_t size) override
 	{
 		assert(location + size <= m_size);
-		memcpy(m_data.get() + location, src, size);
+		memcpy(m_data + location, src, size);
 	}
 
 private:
-	std::shared_ptr<char> m_data;
+	char* m_data;
 };
 
-class IODisk: public IO
+class IODisk: public IOBase
 {
 public:
+	IODisk() : m_file(nullptr)
+	{}
+
 	virtual void Init(const char* path) override
 	{
 		m_file = fopen(path, "rb+");
@@ -101,6 +114,8 @@ struct DiskImpl
 	DiskImpl(bool memory);
 	~DiskImpl();
 
+	IOBase* m_io;
+
 	Disk::BIOS_ParameterBlock m_biosBlock;
 	size_t m_size;
 
@@ -110,10 +125,9 @@ struct DiskImpl
 	uint16_t m_physical_secPerTrk;
 	uint16_t m_physical_numHeads;
 	bool m_doTranslation;
-	IO* m_io;
 };
 
-DiskImpl::DiskImpl(bool memory) : m_bootable(false), m_floppy(false)
+DiskImpl::DiskImpl(bool memory) : m_bootable(false), m_floppy(false), m_io(nullptr)
 {
 	if (memory)
 	{
@@ -121,7 +135,7 @@ DiskImpl::DiskImpl(bool memory) : m_bootable(false), m_floppy(false)
 	}
 	else
 	{
-		m_io = new IODisk();
+		m_io = new IODisk;
 	}
 }
 
@@ -130,7 +144,7 @@ DiskImpl::~DiskImpl()
 	delete m_io;
 }
 
-Disk::Disk()
+Disk::Disk(): m_impl(nullptr)
 {}
 
 void Disk::ReadBIOS_ParameterBlock(uint32_t offset)
@@ -160,7 +174,7 @@ void Disk::ReadBIOS_ParameterBlock(uint32_t offset)
 }
 
 
-void Disk::Open(const char * path, bool inmemory)
+void Disk::Open(const char* path, bool inmemory)
 {
 	m_impl.reset(new DiskImpl(inmemory));
 
@@ -211,8 +225,6 @@ void Disk::Open(const char * path, bool inmemory)
 
 		m_impl->m_doTranslation = block.numHeads != m_impl->m_physical_numHeads;
 	}
-
-	free(malloc(100000));
 }
 
 

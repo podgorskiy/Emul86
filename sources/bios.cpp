@@ -269,7 +269,8 @@ void BIOS::Int(byte x)
 		}
 		else
 		{
-			ASSERT(false, "Unknown interrupt: 0x%s\n", n2hexstr(x).c_str());
+			ASSERT(false, "Unknown interrupt: 0x%s, AX:0x%s\n", n2hexstr(x).c_str(), n2hexstr(GET_AX()).c_str());
+			m_cpu.Interrupt(x);
 		}
 	}
 }
