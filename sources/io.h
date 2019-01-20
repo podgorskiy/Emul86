@@ -124,9 +124,14 @@ private:
 		
 	struct PIT
 	{
-		word current_count;
-		word reload_val;
-		byte mode;
+		word current_count = 0;
+		word current_count_latched = 0;
+		word reload_val = 0xFFFF;
+		byte operating_mode = 0;
+		byte access_mode = 0;
+		bool changing_reload = false;
+		bool latch_acive = true;
+		byte access_cycle = 0;
 	};
 
 	PIT m_pit[3];

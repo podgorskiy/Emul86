@@ -710,6 +710,53 @@ word IO::GetPort(uint32_t address, IN_OUT_SIZE size)
 
 	switch (address) 
 	{
+
+	//https://wiki.osdev.org/PIT
+	case 0x40: case 0x41: case 0x42:
+	{
+		int channel = address & 0x3;
+		PIT& p = m_pit[channel];
+		int count = p.current_count;
+		if (p.latch_acive)
+		{
+			count = p.current_count_latched;
+		}
+		if (p.access_mode == 1)
+		{
+			p.latch_acive = false;
+			p.access_cycle = 0;
+			return count & 0xff;
+		}
+		else if (p.access_mode == 2)
+		{
+			p.latch_acive = false;
+			p.access_cycle = 0;
+			return (count >> 8) & 0xff;
+		}
+		else if (p.access_mode == 3)
+		{
+			if (p.access_cycle == 0)
+			{
+				p.access_cycle = 1;
+				return count & 0xff;
+			}
+			else
+			{
+				p.latch_acive = false;
+				p.access_cycle = 0;
+				return (count >> 8) & 0xff;
+			}
+		}
+		break;
+	}
+
+	case 0x61:
+		// Ignore sound;
+		break;
+
+	case 0x43:
+		return 0;
+
 		// https://wiki.osdev.org/%228042%22_PS/2_Controller
 	case 0x60:
 	{
@@ -798,20 +845,65 @@ void IO::SetPort(uint32_t address, word x, IN_OUT_SIZE size)
 	switch (address)
 	{
 	//https://wiki.osdev.org/PIT
-	/*case 0x40: case 0x41: case 0x42:
+	case 0x40: case 0x41: case 0x42:
 	{
 		int channel = address & 0x3;
-
+		PIT& p = m_pit[channel];
+		if (p.access_mode == 1)
+		{
+			p.reload_val = x;
+			p.access_cycle = 0;
+			p.changing_reload = false;
+			p.current_count = p.reload_val;
+		}
+		else if (p.access_mode == 2)
+		{
+			p.reload_val = x << 8;
+			p.access_cycle = 0;
+			p.changing_reload = false;
+			p.current_count = p.reload_val;
+		}
+		else if (p.access_mode == 3)
+		{
+			if (p.access_cycle == 0)
+			{
+				p.access_cycle = 1;
+				p.reload_val = x;
+			}
+			else
+			{
+				p.reload_val |= x << 8;
+				p.changing_reload = false;
+				p.access_cycle = 0;
+				p.current_count = p.reload_val;
+			}
+		}
 		break;
 	}
 	case 0x43:
 	{
 		int channel = x >> 6;
 		PIT& p = m_pit[channel];
+		byte mode = (x >> 4) & 0b11;
+		if (mode != 0)
+		{
+			p.access_mode = mode;
+		}
+		else
+		{
+			p.latch_acive = true;
+			p.current_count_latched = p.current_count;
+		}
+		p.operating_mode = (x >> 1) & 0b111;
+		p.changing_reload = true;
+		p.access_cycle = 0;
 
 		break;
 	}
-	*/
+
+	case 0x61:
+		// Ignore sound;
+		break;
 
 	// VGA
 	// Just ignoring most of vga controls...
@@ -860,14 +952,25 @@ void IO::SetPort(uint32_t address, word x, IN_OUT_SIZE size)
 
 void IO::PITSignal()
 {
-	--m_pit[0].current_count;
-
-	if ((m_pit[0].current_count & 0x0FFF) == 0)
+	for (int i = 0; i < 3; ++i)
 	{
-		if (m_cpu->TestFlag<CPU::IF>())
-			m_cpu->Interrupt(8);
+		if (!m_pit[i].changing_reload)
+		{
+			--m_pit[i].current_count;
+
+			if (m_pit[i].current_count == 0)
+			{
+				if (m_pit[i].operating_mode == 2)
+				{
+					m_pit[i].current_count = m_pit[i].reload_val;
+				}
+				if (m_cpu->TestFlag<CPU::IF>())
+				{
+					m_cpu->Interrupt(8);
+				}
+			}
+		}
 	}
-	return;
 }
 
 void IO::AddCpu(CPU & cpu)

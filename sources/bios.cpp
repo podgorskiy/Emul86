@@ -627,6 +627,8 @@ void BIOS::Int10VideoServices(int function, int arg)
 			SET_BL(3);
 			SET_CX(9);
 			break;
+		case 0x0:
+			break;
 		default:
 			UNSUPPORTED_INT(0x10);
 		}
