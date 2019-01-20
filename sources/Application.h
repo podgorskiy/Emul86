@@ -25,5 +25,6 @@ private:
 	CPU m_cpu;
 	IO m_io;
 	BIOS m_bios;
-	int m_scale;
+	int m_scale; 
+	std::chrono::time_point<std::chrono::system_clock> m_start;
 };

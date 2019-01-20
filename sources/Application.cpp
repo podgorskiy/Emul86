@@ -6,20 +6,36 @@
 #include <sstream>
 #include <string>
 
-Application::Application(): m_cpu(m_io), m_bios(m_io, m_cpu)
+
+namespace Assert
 {
+	extern void(*OpPause)();
 }
 
+static bool run = false;
+
+void CallbackOpPause()
+{
+	//run = false;
+}
+
+Application::Application(): m_cpu(m_io), m_bios(m_io, m_cpu)
+{
+	Assert::OpPause = CallbackOpPause;
+}
 
 int Application::Init()
 {
 	m_io.Init();
 	m_io.ClearMemory();
 	m_cpu.SetInterruptHandler(&m_bios);
+	m_io.AddCpu(m_cpu);
 
-	Disk disk;	disk.Open("c.img", true);
+#ifndef _DEBUG
+	Disk disk;	disk.Open("F://c.img", true);
 	m_io.AddDisk(disk);
 	Boot();
+#endif
 	return EXIT_SUCCESS;
 }
 
@@ -49,14 +65,13 @@ IO& Application::GetIO()
 
 void Application::Update()
 {
+	bool singleStep = false;
+
 	std::pair<bool, word> cpu_ax = m_io.UpdateKeyState();
 	if (cpu_ax.first)
 	{
 		m_cpu.SetRegister(CPU::AX, cpu_ax.second);
 	}
-
-	static bool run = false;
-	bool singleStep = false;
 
 #ifdef _DEBUG
 	uint32_t stopAt = -1;// select(0xF000, 0x00E5);
@@ -79,18 +94,32 @@ void Application::Update()
 #endif
 
 	static int64_t instructions = 0;
+	static int instructions_pit = 0;
 	static float seconds = 0;
-	static int IPS = 0;
+	static float IPS = 1.0f;
 
 	std::chrono::time_point<std::chrono::system_clock> framestart = std::chrono::system_clock::now();
 
 	for (int i = 0; run && !m_io.ISKeyboardHalted(); ++i)
 	{
+		if (IPS != 0)
+		{
+			if ((float)(instructions_pit * 1193180) / IPS > 1.0f)
+			{
+				m_io.PITSignal();
+				instructions_pit = 0;
+			}
+		}
+
 		if (i % 200 == 0)
 		{
 			auto current_timestamp = std::chrono::system_clock::now();
-			std::chrono::duration<float> elapsed_time = (current_timestamp - framestart);
-			float elapsed = elapsed_time.count();
+			std::chrono::duration<double> elapsed_time_from_frame = (current_timestamp - framestart);
+			std::chrono::duration<double> elapsed_time_from_start = (current_timestamp - m_start);
+
+			m_io.MemStoreD(BIOS_DATA_OFFSET, 0x006C, int(elapsed_time_from_start.count() * 1193180 / 65536));
+			
+			double elapsed = elapsed_time_from_frame.count();
 			if (elapsed > 0.018f)
 			{
 				seconds += elapsed;
@@ -109,7 +138,8 @@ void Application::Update()
 			}
 		}
 		m_cpu.Step();
-		instructions += 1;
+		++instructions;
+		++instructions_pit;
 #ifdef _DEBUG
 		if (select(m_cpu.GetSegment(CPU::CS), m_cpu.IP) == stopAt || singleStep)
 		{
@@ -126,39 +156,59 @@ void Application::Update()
 
 	ImGui::Begin("Disk");
 	
-	/*
+
+	if (ImGui::Button("Clear Disks"))
+	{
+		m_io.ClearDisks();
+	}
+
 	if (ImGui::Button("Mount Dos6.22"))
 	{
-		m_disk.Open("Dos6.22.img");
+		Disk disk;	disk.Open("Dos6.22.img", true);
+		m_io.AddDisk(disk);
 	}
 	if (ImGui::Button("Mount GlukOS.IMA"))
 	{
-		m_disk.Open("GlukOS.IMA");
+		Disk disk;	disk.Open("GlukOS.IMA", true);
+		m_io.AddDisk(disk);
 	}
 	if (ImGui::Button("Mount mikeos.dmg"))
 	{
-		m_disk.Open("mikeos.dmg");
+		Disk disk;	disk.Open("mikeos.dmg", true);
+		m_io.AddDisk(disk);
 	}
 	if (ImGui::Button("Mount freedos722.img"))
 	{
-		m_disk.Open("freedos722.img");
+		Disk disk;	disk.Open("freedos722.img", true);
+		m_io.AddDisk(disk);
 	}
 	if (ImGui::Button("Mount Dos3.3.img"))
 	{
-		m_disk.Open("Dos3.3.img");
+		Disk disk;	disk.Open("Dos3.3.img", true);
+		m_io.AddDisk(disk);
 	}
 	if (ImGui::Button("Mount Dos4.01.img"))
 	{
-		m_disk.Open("Dos4.01.img");
+		Disk disk;	disk.Open("Dos4.01.img", true);
+		m_io.AddDisk(disk);
 	}
 	if (ImGui::Button("Mount Dos5.0.img"))
 	{
-		m_disk.Open("Dos5.0.img");
+		Disk disk;	disk.Open("Dos5.0.img", true);
+		m_io.AddDisk(disk);
 	}
 	if (ImGui::Button("Mount c.img"))
 	{
-		m_disk.Open("F:/c.img");
-	}*/
+		Disk disk;	disk.Open("c.img", true);
+		m_io.AddDisk(disk);
+	}
+	if (ImGui::Button("Mount F:/c.img"))
+	{
+		Disk disk;	disk.Open("F:/c.img", true);
+		m_io.AddDisk(disk);
+	}
+
+	//m_io.
 	
 	static int loadAddress = 0x7C00;
 	ImGui::PushItemWidth(150);
@@ -176,6 +226,7 @@ void Application::Update()
 		m_cpu.Reset();
 		m_cpu.IP = loadAddress;
 		m_cpu.SetSegment(CPU::CS, 0);
+		m_start = std::chrono::system_clock::now();
 	}
 
 	if (ImGui::Button("Load testrom"))
@@ -193,6 +244,7 @@ void Application::Update()
 		m_cpu.Reset();
 		m_cpu.IP = 0xfff0;
 		m_cpu.SetSegment(CPU::CS, BIOS_SEGMENT);
+		m_start = std::chrono::system_clock::now();
 	}
 
 	if (ImGui::Button("TestCPU"))
@@ -272,4 +324,5 @@ void Application::Boot()
 	m_cpu.Reset();
 	m_cpu.IP = loadAddress;
 	m_cpu.SetSegment(CPU::CS, 0);
+	m_start = std::chrono::system_clock::now();
 }

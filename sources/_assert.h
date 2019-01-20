@@ -17,6 +17,8 @@ namespace Assert
 	};
 
 	result message(const char *file, int line, const char *condition, const char *fmt, ...);
+
+	extern void (*OpPause)();
 }
 
 #define ASSERT(X, ...) \
@@ -35,6 +37,34 @@ namespace Assert
 		else if(r==Assert::result_break)\
 		{\
 			BREAKPOINT();\
+		}\
+		else if(r==Assert::result_ignore_once)\
+		{\
+			if (Assert::OpPause != nullptr) Assert::OpPause(); \
+		}\
+	}\
+}
+
+#define WARN(...)\
+{\
+	static bool _i=false;\
+	if(!_i)\
+	{\
+		printf("%s(%d):",__FILE__,__LINE__);\
+		printf(__VA_ARGS__);\
+		printf("\n");\
+		Assert::result r=Assert::message(__FILE__,__LINE__,nullptr,__VA_ARGS__);\
+		if(r==Assert::result_ignore_always)\
+		{\
+			_i=true;\
+		}\
+		else if(r==Assert::result_break)\
+		{\
+			BREAKPOINT();\
+		}\
+		else if(r==Assert::result_ignore_once)\
+		{\
+			if (Assert::OpPause != nullptr) Assert::OpPause(); \
 		}\
 	}\
 }

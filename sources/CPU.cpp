@@ -542,15 +542,18 @@ void CPU::Reset()
 const char* CPU::GetDebugString()
 {
 	char* tmp = dbg_buff;
-	tmp = n2hexstr(tmp, m_segments[CS]);
+	//tmp = n2hexstr(tmp, m_segments[CS]);
 	tmp = n2hexstr(tmp, (word)(IP));
+	*tmp++ = ' ';
 	for (int i = 0; i < 8; ++i)
 	{
 		tmp = n2hexstr(tmp, m_registers[i]);
+		*tmp++ = ' ';
 	}
 	for (int i = 0; i < 4; ++i)
 	{
 		tmp = n2hexstr(tmp, m_segments[i]);
+		*tmp++ = ' ';
 	}
 	n2hexstr(tmp, m_flags);
 	return dbg_buff;
@@ -1189,7 +1192,11 @@ void CPU::IN_imm()
 {
 	CMD_NAME("IN");
 	ADDRESS = GetImm<byte>();
-	SetRegister<T>(0, m_io.Port<T>(ADDRESS));
+	APPEND_DBG_REGB(0);
+	APPEND_DBG(", 0x");
+	APPEND_HEX_DBG((byte)ADDRESS);
+
+	SetRegister<T>(0, m_io.GetPort<T>(ADDRESS));
 }
 
 
@@ -1200,7 +1207,7 @@ void CPU::IN_dx()
 	APPEND_DBG_REGW(DX);
 	ADDRESS = GetRegister<word>(DX);
 	APPEND_DBG_REGT(0, T);
-	SetRegister<T>(0, m_io.Port<T>(ADDRESS));
+	SetRegister<T>(0, m_io.GetPort<T>(ADDRESS));
 }
 
 
@@ -1210,7 +1217,9 @@ void CPU::OUT_imm()
 	CMD_NAME("OUT");
 	ADDRESS = GetImm<byte>();
 	APPEND_DBG_REGB(0);
-	m_io.Port<T>(ADDRESS) = GetRegister<T>(AL);
+	APPEND_DBG(", 0x");
+	APPEND_HEX_DBG((byte)ADDRESS);
+	m_io.SetPort<T>(ADDRESS, GetRegister<T>(AL));
 }
 
 
@@ -1221,7 +1230,7 @@ void CPU::OUT_dx()
 	ADDRESS = GetRegister<word>(DX);
 	APPEND_DBG_REGW(DX);
 	APPEND_DBG_REGT(0, T);
-	m_io.Port<T>(ADDRESS) = GetRegister<T>(0);
+	m_io.SetPort<T>(ADDRESS, GetRegister<T>(0));
 }
 
 template<typename T>
@@ -1236,7 +1245,7 @@ void CPU::INS()
 	word step = GetStep<T>();
 	for (int i = 0; i < times; ++i)
 	{
-		m_io.SetMemory<T>(select(GetSegment(ES), GetRegister<word>(DI)), m_io.Port<T>(GetRegister<word>(DX)));
+		m_io.SetMemory<T>(select(GetSegment(ES), GetRegister<word>(DI)), m_io.GetPort<T>(GetRegister<word>(DX)));
 
 		m_registers[SI] += step;
 		m_registers[DI] += step;
@@ -1266,7 +1275,7 @@ void CPU::OUTS()
 		{
 			offsetreg = m_segmentOverride;
 		}
-		m_io.Port<T>(GetRegister<word>(DX)) = m_io.GetMemory<T>(select(GetSegment(offsetreg), GetRegister<word>(SI)));
+		m_io.SetPort<T>(GetRegister<word>(DX), m_io.GetMemory<T>(select(GetSegment(offsetreg), GetRegister<word>(SI))));
 
 		m_registers[SI] += step;
 		m_registers[DI] += step;
@@ -1578,7 +1587,7 @@ void CPU::StepInternal()
 	case 0x68:
 		CMD_NAME("PUSH");
 		OPERAND_A = GetImm<word>();
-		APPEND_HEX_DBG(OPERAND_A);
+		APPEND_HEX_DBG((word)OPERAND_A);
 		Push(OPERAND_A);
 		break;
 
@@ -1590,7 +1599,7 @@ void CPU::StepInternal()
 		OPERAND_A = (int16_t)GetRM<word>();
 		APPEND_DBG(", ");
 		OPERAND_B = (int16_t)GetImm<word>();
-		APPEND_HEX_DBG(OPERAND_B);
+		APPEND_HEX_DBG((int16_t)OPERAND_B);
 		RESULT = OPERAND_A * OPERAND_B;
 		SetRegister<word>(RESULT);
 		UpdateFlags_ZF<word>();
@@ -1617,7 +1626,7 @@ void CPU::StepInternal()
 		OPERAND_A = (int16_t)GetRM<word>(); // sign extend
 		APPEND_DBG(", ");
 		OPERAND_B = (sbyte)GetImm<byte>(); // sign extend
-		APPEND_HEX_DBG(OPERAND_B);
+		APPEND_HEX_DBG((sbyte)OPERAND_B);
 		RESULT = OPERAND_A * OPERAND_B;
 		SetRegister<word>(RESULT);
 		UpdateFlags_ZF<word>();

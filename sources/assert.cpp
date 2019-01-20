@@ -6,6 +6,8 @@
 #include <windows.h>
 __declspec(thread) HHOOK DebugMessageBoxHook;
 
+void(*Assert::OpPause)() = nullptr;
+
 static LRESULT CALLBACK CustomMessageBoxProc(INT nCode, WPARAM wParam, LPARAM lParam)
 {
 	if (nCode == HCBT_ACTIVATE) {

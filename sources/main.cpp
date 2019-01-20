@@ -120,7 +120,7 @@ int main(int argc, char **argv)
 #else
 	int scale = 1;
 #endif
-	//scale = 1;
+	//scale = 4;
 
 	// text mode 80x25, 16 colors, 8 pages
 	// character 8x16, so 640x400
@@ -228,9 +228,9 @@ int main(int argc, char **argv)
 
 			Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
 
-			if ((action == GLFW_RELEASE || action == GLFW_REPEAT) && code != -1)
+			if ((action == GLFW_PRESS || action == GLFW_REPEAT || action == GLFW_RELEASE) && code != -1)
 			{
-				app->GetIO().PushKey(code);
+				app->GetIO().PushKey(code, action == GLFW_RELEASE);
 			}
 			
 			app->GetIO().SetKeyFlags(
