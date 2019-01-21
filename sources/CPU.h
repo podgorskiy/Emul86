@@ -350,7 +350,7 @@ private:
 	Segments m_segmentOverride;
 	
 	InterruptHandler* m_interruptHandler;
-
+	
 	char dbg_cmd_address[128];
 	char dbg_cmd_name[128];
 	char* dbg_args_ptr;

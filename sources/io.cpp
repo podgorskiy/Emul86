@@ -10,6 +10,45 @@ extern unsigned char palette1[64][3];
 extern unsigned char palette2[64][3];
 extern unsigned char palette3[256][3];
 
+extern int64_t g_instruction;
+extern int64_t g_frame;
+
+#if defined(_DEBUG) && !defined(__EMSCRIPTEN__)
+void APIENTRY DebugMessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam)
+{
+	const char* sourceStr = "";
+	switch (source)
+	{
+	case GL_DEBUG_SOURCE_API: sourceStr = "API"; break;
+	case GL_DEBUG_SOURCE_WINDOW_SYSTEM: sourceStr = "WINDOW_SYSTEM"; break;
+	case GL_DEBUG_SOURCE_SHADER_COMPILER:	 sourceStr = "SHADER_COMPILER"; break;
+	case GL_DEBUG_SOURCE_THIRD_PARTY:	 sourceStr = "THIRD_PARTY"; break;
+	case GL_DEBUG_SOURCE_APPLICATION:	 sourceStr = "APPLICATION"; break;
+	case GL_DEBUG_SOURCE_OTHER:	 sourceStr = "OTHER"; break;
+	}
+	const char* severityStr = "";
+	switch (severity)
+	{
+	case GL_DEBUG_SEVERITY_HIGH: severityStr = "HIGH"; break;
+	case GL_DEBUG_SEVERITY_MEDIUM: severityStr = "MEDIUM"; break;
+	case GL_DEBUG_SEVERITY_LOW:	 severityStr = "LOW"; break;
+	case GL_DEBUG_SEVERITY_NOTIFICATION:	 severityStr = "NOTIFICATION"; return; break;
+	}
+
+	const char* typeStr = "";
+	switch (type)
+	{
+	case GL_DEBUG_TYPE_ERROR: typeStr = "ERROR"; break;
+	case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR: typeStr = "UNDEFINED_BEHAVIOR"; break;
+	case GL_DEBUG_TYPE_PORTABILITY:	 typeStr = "PORTABILITY"; break;
+	case GL_DEBUG_TYPE_PERFORMANCE:	 typeStr = "PERFORMANCE"; break;
+	case GL_DEBUG_TYPE_MARKER:	 typeStr = "MARKER"; break;
+	}
+
+	printf("%s: severity %s, type %s, %s\n", sourceStr, severityStr, typeStr, message);
+}
+#endif
+
 struct VideoMode
 {
 	enum Class
@@ -69,6 +108,9 @@ void IO::Init()
 	EnableA20Gate();
 	m_texture = 0;
 	m_fbo = 0;
+	m_currentScanCode = 0;
+	m_pending_pit_interrupt = 0;
+	InitGL();
 }
 
 
@@ -247,15 +289,16 @@ void IO::ActivateVideoMode(int mode)
 
 		glBindTexture(GL_TEXTURE_2D, m_texture);
 
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, vm.screen_width, vm.screen_height, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 512, 512, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
 		glBindTexture(GL_TEXTURE_2D, 0);
 
+		/*
 		glGenFramebuffers(1, &m_fbo);
 		glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
 
@@ -273,6 +316,7 @@ void IO::ActivateVideoMode(int mode)
 			default:WARN("UKNOWN"); break;
 			}
 		}
+		*/
 	}
 }
 
@@ -290,19 +334,106 @@ void IO::BlitData(int displayScale)
 	int mode = MemGetB(BIOS_DATA_OFFSET, BIOSMEM_CURRENT_MODE);
 	const VideoMode& vm = videoModes[mode];
 	glBindTexture(GL_TEXTURE_2D, m_texture);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, vm.screen_width, vm.screen_height, 0, GL_RGB, GL_UNSIGNED_BYTE, buffer);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, vm.screen_width, vm.screen_height, 0, GL_RGB, GL_UNSIGNED_BYTE, buffer);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebufferBackUp);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, m_fbo);
+	glUseProgram(m_shaderprogram);
 
-	glBlitFramebuffer(0, 0, vm.screen_width, vm.screen_height, 0, viewportBackUp[3], vm.screen_width * displayScale * 2, viewportBackUp[3] - vm.screen_height * displayScale * 2 - 1, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, m_texture);
 
-	glViewport(viewportBackUp[0], viewportBackUp[1], viewportBackUp[2], viewportBackUp[3]);
+	glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), 0);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (GLvoid*)(2 * sizeof(GLfloat)));
 
-	glBindFramebuffer(GL_FRAMEBUFFER, framebufferBackUp);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+	int i = 0;
+	glUniform1iv(u_text, 1, &i);
+	float val[4];
+	val[0] = 0;
+	val[1] = 1.0 - vm.screen_height * displayScale * 2 / float(fbHeight);
+	val[2] = vm.screen_width * displayScale * 2 / float(fbWidth);
+	val[3] = vm.screen_height * displayScale * 2 / float(fbHeight);
+
+	glUniform4fv(u_posoffset, 1, val);
+
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+
+	glDisableVertexAttribArray(0);
+	glDisableVertexAttribArray(1);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void IO::InitGL()
+{
+#if defined(_DEBUG) && !defined(__EMSCRIPTEN__)
+	glDebugMessageCallback(&DebugMessageCallback, nullptr);
+	glEnable(GL_DEBUG_OUTPUT);
+#endif
+	const GLchar* vShaderCode =
+		"precision highp float; \n"
+		"attribute vec2 in_position; \n"
+		"attribute vec2 in_coord; \n"
+		"varying vec2 out_coord; \n"
+		"uniform vec4 posoffset; \n"
+		"void main() {\n"
+		"	gl_Position = vec4(vec2(posoffset.xy + posoffset.zw * in_position) * 2.0 - vec2(1.0), 0.0, 1.0); \n"
+		"	out_coord = in_coord; \n"
+		"}\n";
+
+	const GLchar* fShaderCode =
+		"precision highp float; \n"
+		"varying vec2 out_coord; \n"
+		"uniform sampler2D text; \n"
+		"void main() {\n"
+		"	vec4 c = texture2D(text, out_coord); \n"
+		"	gl_FragColor = c; \n"
+		"}\n";
+
+	unsigned int vertexShader = glCreateShader(GL_VERTEX_SHADER);
+	printf("m_vertexShader %d\n", vertexShader);
+	glShaderSource(vertexShader, 1, &vShaderCode, 0);
+	glCompileShader(vertexShader);
+
+	unsigned int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+	printf("m_fragmentShader %d\n", fragmentShader);
+	glShaderSource(fragmentShader, 1, &fShaderCode, 0);
+	glCompileShader(fragmentShader);
+
+	m_shaderprogram = glCreateProgram();
+	glAttachShader(m_shaderprogram, vertexShader);
+	glAttachShader(m_shaderprogram, fragmentShader);
+	glLinkProgram(m_shaderprogram);
+
+	glDeleteShader(vertexShader);
+	glDeleteShader(fragmentShader);
+
+	u_posoffset = glGetUniformLocation(m_shaderprogram, "posoffset");
+	u_text = glGetUniformLocation(m_shaderprogram, "text");
+
+	glBindAttribLocation(m_shaderprogram, 0, "in_position");
+	glBindAttribLocation(m_shaderprogram, 1, "in_coord");
+
+	const GLfloat vertices[6][4] = {
+		{ 0.0, 0.0, 0.0, 1.0 },
+		{ 0.0, 1.0, 0.0, 0.0 },
+		{ 1.0, 1.0, 1.0, 0.0 },
+		{ 0.0, 0.0, 0.0, 1.0 },
+		{ 1.0, 1.0, 1.0, 0.0 },
+		{ 1.0, 0.0, 1.0, 1.0 } };
+
+	glGenBuffers(1, &m_vbo);
+
+	glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+	glBufferData(GL_ARRAY_BUFFER, 4 * 6 * sizeof(GLfloat), vertices, GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 
@@ -396,11 +527,8 @@ bool IO::GetA20GateStatus() const
 }
 
 
-std::pair<bool, word> IO::UpdateKeyState()
+bool IO::UpdateKeyState()
 {
-	bool write_to_ax = false;
-	word ax_value_to_write = 0;
-
 	if (keyBuffer.size() > 0)
 	{
 		if (keyBuffer.front() != 0)
@@ -409,22 +537,14 @@ std::pair<bool, word> IO::UpdateKeyState()
 			bool was_halted = SetCurrentKey(key);
 			if (was_halted)
 			{
-				write_to_ax = true;
-				ax_value_to_write = key;
-			}
+				m_cpu->SetRegister(CPU::AX, (word)key);
 
-			if (was_halted)
-			{
 				keyBuffer.pop_front();
 				if (keyBuffer.size() == 0)
 				{
 					ClearCurrentCode();
 				}
 				PopKey();
-				if (!IsCustomIntHandlerInstalled(0x16))
-				{
-					scanCodeBuffer.clear();
-				}
 			}
 		}
 		else
@@ -436,11 +556,32 @@ std::pair<bool, word> IO::UpdateKeyState()
 	{
 		ClearCurrentCode();
 	}
-	if (m_cpu->TestFlag<CPU::IF>() && scanCodeBuffer.size() > 0)
+	if (scanCodeBuffer.size() > 0)
 	{
-		m_cpu->Interrupt(9);
+		int scancode = scanCodeBuffer.front();
+		// if release key
+		if (scancode & 0x80 && (m_lastReadScanCode == (scancode & 0x7F)))
+		{
+			std::chrono::duration<float> elapsed_from_key_press = (std::chrono::steady_clock::now() - m_lastKeyPress);
+			// Allow at least 100ms, before sending release key. In some games there is risk of key event being omitted.
+			if (elapsed_from_key_press.count() < 0.1f)
+			{
+				return m_int16_halt;
+			}
+		}
+		if (m_cpu->TestFlag<CPU::IF>())
+		{
+			m_currentScanCode = scancode;
+			scanCodeBuffer.pop_front();
+			m_cpu->Interrupt(9);
+			// If key went down
+			if ((m_currentScanCode & 0x80) == 0)
+			{
+				m_lastKeyPress = std::chrono::steady_clock::now();
+			}
+		}
 	}
-	return std::make_pair(write_to_ax, ax_value_to_write);
+	return m_int16_halt;
 }
 
 
@@ -450,7 +591,7 @@ void IO::KeyboardHalt()
 }
 
 
-bool IO::ISKeyboardHalted() const
+bool IO::IsKeyboardHalted() const
 {
 	return m_int16_halt;
 }
@@ -613,10 +754,6 @@ void IO::PushKey(int c, bool release)
 	{
 		scanCodeBuffer.pop_back();
 	}
-	if (m_cpu->TestFlag<CPU::IF>())
-	{
-		m_cpu->Interrupt(9);
-	}
 }
 
 
@@ -654,7 +791,7 @@ void LogPortAccess(int address)
 		|| (address >= 0x0080 && address <= 0x008F)
 		|| (address >= 0x00C0 && address <= 0x00DE)
 		) {
-		WARN("DMA controller 0x%04x", address);
+		//WARN("DMA controller 0x%04x", address);
 	}
 	else if (0
 		|| (address == 0x0020)
@@ -668,13 +805,13 @@ void LogPortAccess(int address)
 		|| (address >= 0x0040 && address <= 0x0043)
 		|| (address == 0x0061)
 		) {
-		WARN("8254 PIT 0x%04x", address);
+		//WARN("8254 PIT 0x%04x", address);
 	}
 	else if (0
 		|| (address == 0x0060)
 		|| (address == 0x0064)
 		) {
-		WARN("8254 PIT 0x%04x", address);
+		//WARN("8254 PIT 0x%04x", address);
 	}
 	else if (0
 		|| (address >= 0x03B4 && address <= 0x03B5)
@@ -694,9 +831,6 @@ word IO::GetPort(uint32_t address, IN_OUT_SIZE size)
 	{
 		return GetPort(address, BYTE) | (GetPort(address + 1, BYTE) << 8);
 	}
-
-	bool ma_sl;
-	uint32_t channel;
 
 	if (0
 		|| (address >= 0x0000 && address <= 0x000F)
@@ -760,13 +894,10 @@ word IO::GetPort(uint32_t address, IN_OUT_SIZE size)
 		// https://wiki.osdev.org/%228042%22_PS/2_Controller
 	case 0x60:
 	{
-		if (scanCodeBuffer.size() > 0)
-		{
-			int val = scanCodeBuffer.front();// MemGetB(BIOS_DATA_OFFSET, 0xBA);
-			scanCodeBuffer.pop_front();
-			return val;
-		}
-		return 0;
+		int val = m_currentScanCode;
+		m_lastReadScanCode = m_currentScanCode;
+		m_currentScanCode = 0;
+		return val;
 	}
 
 
@@ -782,15 +913,12 @@ word IO::GetPort(uint32_t address, IN_OUT_SIZE size)
 
 	case 0x03c6:
 		return m_dac.mask;
-		break;
 
 	case 0x03c7:
 		return m_dac.state;
-		break;
 
 	case 0x03c8:
 		return m_dac.wreg;
-		break;
 
 	case 0x03c9:
 		if (m_dac.state == 0x03) 
@@ -818,19 +946,21 @@ word IO::GetPort(uint32_t address, IN_OUT_SIZE size)
 			return 0x3f;
 		}
 		break;
-	default:
-		LogPortAccess(address);
-		return *reinterpret_cast<byte*>(m_port + A20_GATE(address));
 	}
+
+	LogPortAccess(address);
+	return *reinterpret_cast<byte*>(m_port + A20_GATE(address));
 }
 
-void IO::SetPort(uint32_t address, word x, IN_OUT_SIZE size)
+void IO::SetPort(uint32_t address, word wx, IN_OUT_SIZE size)
 {
 	if (size == WORD)
 	{
-		SetPort(address, x & 0xFF, BYTE);
-		SetPort(address + 1, (x >> 8) & 0xFF, BYTE);
+		SetPort(address, wx & 0xFF, BYTE);
+		SetPort(address + 1, (wx >> 8) & 0xFF, BYTE);
 	}
+
+	byte x = (byte)wx;
 
 	if (0
 		|| (address >= 0x0000 && address <= 0x000F)
@@ -950,26 +1080,37 @@ void IO::SetPort(uint32_t address, word x, IN_OUT_SIZE size)
 	}
 }
 
-void IO::PITSignal()
+void IO::PITUpdate(int cycles)
 {
 	for (int i = 0; i < 3; ++i)
 	{
 		if (!m_pit[i].changing_reload)
 		{
-			--m_pit[i].current_count;
-
-			if (m_pit[i].current_count == 0)
+			if (m_pit[i].current_count > cycles)
 			{
+				m_pit[i].current_count -= cycles;
+			}
+			else
+			{
+				cycles -= m_pit[i].current_count;
+
 				if (m_pit[i].operating_mode == 2)
 				{
 					m_pit[i].current_count = m_pit[i].reload_val;
 				}
-				if (m_cpu->TestFlag<CPU::IF>())
+				if (i == 0)
 				{
-					m_cpu->Interrupt(8);
+					++m_pending_pit_interrupt;
 				}
+
+				m_pit[i].current_count -= cycles;
 			}
 		}
+	}
+	if (m_pending_pit_interrupt > 0 && m_cpu->TestFlag<CPU::IF>())
+	{
+		m_cpu->Interrupt(8);
+		--m_pending_pit_interrupt;
 	}
 }
 
@@ -1017,7 +1158,7 @@ bool IO::IsCustomIntHandlerInstalled(int x)
 	return (MemGetW(0x0, x * 4) != DEFAULT_HANDLER || MemGetW(0x0, x * 4 + 2) != BIOS_SEGMENT);
 }
 
-static unsigned char palette1[64][3] =
+unsigned char palette1[64][3] =
 {
 	0x00,0x00,0x00, 0x00,0x00,0x2a, 0x00,0x2a,0x00, 0x00,0x2a,0x2a, 0x2a,0x00,0x00, 0x2a,0x00,0x2a, 0x2a,0x15,0x00, 0x2a,0x2a,0x2a,
 	0x00,0x00,0x00, 0x00,0x00,0x2a, 0x00,0x2a,0x00, 0x00,0x2a,0x2a, 0x2a,0x00,0x00, 0x2a,0x00,0x2a, 0x2a,0x15,0x00, 0x2a,0x2a,0x2a,
@@ -1029,7 +1170,7 @@ static unsigned char palette1[64][3] =
 	0x15,0x15,0x15, 0x15,0x15,0x3f, 0x15,0x3f,0x15, 0x15,0x3f,0x3f, 0x3f,0x15,0x15, 0x3f,0x15,0x3f, 0x3f,0x3f,0x15, 0x3f,0x3f,0x3f
 };
 
-static unsigned char palette2[64][3] =
+unsigned char palette2[64][3] =
 {
 	0x00,0x00,0x00, 0x00,0x00,0x2a, 0x00,0x2a,0x00, 0x00,0x2a,0x2a, 0x2a,0x00,0x00, 0x2a,0x00,0x2a, 0x2a,0x2a,0x00, 0x2a,0x2a,0x2a,
 	0x00,0x00,0x15, 0x00,0x00,0x3f, 0x00,0x2a,0x15, 0x00,0x2a,0x3f, 0x2a,0x00,0x15, 0x2a,0x00,0x3f, 0x2a,0x2a,0x15, 0x2a,0x2a,0x3f,
@@ -1041,7 +1182,7 @@ static unsigned char palette2[64][3] =
 	0x15,0x15,0x15, 0x15,0x15,0x3f, 0x15,0x3f,0x15, 0x15,0x3f,0x3f, 0x3f,0x15,0x15, 0x3f,0x15,0x3f, 0x3f,0x3f,0x15, 0x3f,0x3f,0x3f
 };
 
-static unsigned char palette3[256][3] =
+unsigned char palette3[256][3] =
 {
 	0x00,0x00,0x00, 0x00,0x00,0x2a, 0x00,0x2a,0x00, 0x00,0x2a,0x2a, 0x2a,0x00,0x00, 0x2a,0x00,0x2a, 0x2a,0x15,0x00, 0x2a,0x2a,0x2a,
 	0x15,0x15,0x15, 0x15,0x15,0x3f, 0x15,0x3f,0x15, 0x15,0x3f,0x3f, 0x3f,0x15,0x15, 0x3f,0x15,0x3f, 0x3f,0x3f,0x15, 0x3f,0x3f,0x3f,

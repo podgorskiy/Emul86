@@ -21,9 +21,9 @@ public:
 	void ActivateVideoMode(int mode);
 
 	// Keyboard
-	std::pair<bool, word> UpdateKeyState();
+	bool UpdateKeyState();
 	void KeyboardHalt();
-	bool ISKeyboardHalted() const;
+	bool IsKeyboardHalted() const;
 	bool SetCurrentKey(int c);
 	void PushKey(int c, bool release);
 	void SetKeyFlags(bool rightShift, bool leftShift, bool CTRL, bool alt);
@@ -73,7 +73,7 @@ public:
 	void DisableA20Gate();
 	bool GetA20GateStatus() const;
 
-	void PITSignal();
+	void PITUpdate(int cycles);
 
 	void AddCpu(CPU& cpu);
 
@@ -87,11 +87,16 @@ private:
 	void ClearCurrentCode();
 
 	void BlitData(int displayScale);
+	void InitGL();
 
 	std::vector<Disk> m_floppyDrives;
 	std::vector<Disk> m_hardDrives;
 	std::list<int> keyBuffer;
 	std::list<byte> scanCodeBuffer;
+	unsigned int m_shaderprogram;
+	unsigned int u_posoffset;
+	unsigned int u_text;
+	unsigned int m_vbo;
 
 	byte* m_ram;
 	byte* m_port;
@@ -101,6 +106,7 @@ private:
 	int m_currentKeyCode;
 	int m_keyFlags;
 	bool m_int16_halt;
+	int m_currentScanCode;
 
 	unsigned int m_texture;
 	unsigned int m_fbo;
@@ -135,6 +141,10 @@ private:
 	};
 
 	PIT m_pit[3];
+
+	int m_pending_pit_interrupt;
+	std::chrono::time_point<std::chrono::steady_clock> m_lastKeyPress;
+	int m_lastReadScanCode;
 
 	DAC_controll m_dac;
 
@@ -178,7 +188,7 @@ inline word IO::GetMemory<word>(uint32_t address) const
 template<>
 inline byte IO::GetPort<byte>(uint32_t address)
 {
-	return GetPort(address, BYTE);
+	return (byte)GetPort(address, BYTE);
 }
 
 template<>

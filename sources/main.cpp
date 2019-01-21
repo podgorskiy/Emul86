@@ -80,14 +80,18 @@ void Update(void* window)
 
 	glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
+	glfwPollEvents();
+
 	app->Update();
+
+	//ImGui::ShowDemoWindow();
 
 	ImGui::Render();
 
+#ifndef __EMSCRIPTEN__
 	glfwSwapInterval(0);
+#endif
 	glfwSwapBuffers((GLFWwindow*)window);
-
-	glfwPollEvents();
 }
 
 Application* app;
@@ -118,7 +122,23 @@ int main(int argc, char **argv)
 #ifndef __EMSCRIPTEN__
 	int scale = static_cast<int>(round(dpix / 72.0f));
 #else
-	int scale = 1;
+	/*
+	float devicePixelRatio = EM_ASM_DOUBLE_V(
+	{
+		if (window.devicePixelRatio != undefined)
+		{
+			return window.devicePixelRatio;
+		}
+		else
+		{
+			return 1.0;
+		}
+	}
+	);
+	*/
+	int scale = 2;// static_cast<int>(round(devicePixelRatio));
+
+	printf("scale %d\n", scale);
 #endif
 	//scale = 4;
 
@@ -129,6 +149,10 @@ int main(int argc, char **argv)
 	GLFWwindow* window = glfwCreateWindow(1200 * scale, 800 * scale, "Emul86", nullptr, nullptr);
 #else
 	GLFWwindow* window = glfwCreateWindow(640 * scale, 400 * scale, "Emul86", nullptr, nullptr);
+#endif
+
+#ifdef __EMSCRIPTEN__
+	//emscripten_set_canvas_size(640, 400);
 #endif
 
 	if (!window)
@@ -152,6 +176,8 @@ int main(int argc, char **argv)
 	ImGui_ImplGlfwGL3_CreateDeviceObjects();
 
 	ImGui::GetIO().FontGlobalScale = (float)scale;
+	ImGui_ImplGlfwGL3_NewFrame();
+	ImGui::Render();
 
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.Colors[ImGuiCol_Text] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
@@ -200,7 +226,6 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-
 	free(malloc(100000));
 
 	app->SetScale(scale);
@@ -230,7 +255,7 @@ int main(int argc, char **argv)
 
 			if ((action == GLFW_PRESS || action == GLFW_REPEAT || action == GLFW_RELEASE) && code != -1)
 			{
-				app->GetIO().PushKey(code, action == GLFW_RELEASE);
+				app->PushKey(code, action == GLFW_RELEASE, action == GLFW_REPEAT);
 			}
 			
 			app->GetIO().SetKeyFlags(

@@ -46,16 +46,6 @@ enum
 };
 
 template <typename I>
-inline std::string n2hexstr(I w, size_t hex_len = sizeof(I) << 1)
-{
-	static const char* digits = "0123456789ABCDEF";
-	std::string rc(hex_len, '0');
-	for (size_t i = 0, j = (hex_len - 1) * 4; i<hex_len; ++i, j -= 4)
-		rc[i] = digits[(w >> j) & 0x0f];
-	return rc;
-}
-
-template <typename I>
 inline char* n2hexstr(char* dst, I w, size_t hex_len = sizeof(I) << 1)
 {
 	static const char* digits = "0123456789ABCDEF";
@@ -63,6 +53,14 @@ inline char* n2hexstr(char* dst, I w, size_t hex_len = sizeof(I) << 1)
 	for (size_t i = 0, j = (hex_len - 1) * 4; i<hex_len; ++i, j -= 4)
 		dst[i] = digits[(w >> j) & 0x0f];
 	return &(*(dst + hex_len) = '\x0');
+}
+
+template <typename I>
+inline std::string n2hexstr(I w, size_t hex_len = sizeof(I) << 1)
+{
+	std::string rc(hex_len, '0');
+	n2hexstr(&rc[0], w, hex_len);
+	return rc;
 }
 
 inline uint32_t select(word seg, word off)

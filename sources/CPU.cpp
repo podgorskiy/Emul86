@@ -667,7 +667,7 @@ void CPU::MOV_reg_imm()
 {
 	CMD_NAME("MOV");
 	byte reg = OPCODE1 & 0x07;
-	APPEND_DBG(m_regNames[reg]);
+	APPEND_DBG_REGT(reg, T);
 	APPEND_DBG(", 0x");
 	T data = GetImm<T>();
 	SetRegister<T>(reg, data);
@@ -1301,7 +1301,7 @@ void CPU::Step()
 	mem_edit.HighlightMin = (((uint32_t)m_segments[CS]) << 4) + IP;
 	mem_edit.HighlightMax = mem_edit.HighlightMin + 1;
 
-	if (logging_state)
+	if (logging_state && logfile)
 	{
 		fprintf(logfile, GetDebugString());
 		fprintf(logfile, "\n");
@@ -1319,7 +1319,7 @@ void CPU::Step()
 	if (logging_state)
 	{
 		m_log.appendf("%s %s %s\n\r", dbg_cmd_address, dbg_cmd_name, dbg_args);
-		printf("%s %s %s\n", dbg_cmd_address, dbg_cmd_name, dbg_args);
+		//printf("%s %s %s\n", dbg_cmd_address, dbg_cmd_name, dbg_args);
 		m_scrollToBottom = true;
 	}
 #endif
@@ -2275,12 +2275,14 @@ void CPU::Interrupt(int n)
 	m_segments[CS] = m_io.GetMemory<word>(n * 4 + 2);
 }
 
+
 void CPU::GUI()
 {
 	char buff[128];
 	ImGui::Begin("CPU Status");
-
 	ImGui::Text("%s %s %s", dbg_cmd_address, dbg_cmd_name, dbg_args);
+	ImGui::Dummy(ImVec2(0, 5));
+	ImGui::SameLine();
 	ImGui::NewLine();
 	for (int i = 0; i < 8; ++i)
 	{
@@ -2298,7 +2300,8 @@ void CPU::GUI()
 		ImGui::TextColored(color, "%s=%s", m_segNames[i], buff);
 		ImGui::SameLine();
 	}
-	ImGui::NewLine();
+	ImGui::Dummy(ImVec2(20, 0));
+	ImGui::SameLine();
 
 	n2hexstr(buff, IP);
 	ImGui::Text("IP=%s", buff);
@@ -2326,8 +2329,9 @@ void CPU::GUI()
 		m_log.clear();
 	};
 	ImGui::SameLine();
-	if (ImGui::Button("Close")) {
+	if (ImGui::Button("Close log file")) {
 		fclose(logfile);
+		logfile = nullptr;
 	};
 	if (ImGui::Button("Clear")) {
 		m_log.clear();

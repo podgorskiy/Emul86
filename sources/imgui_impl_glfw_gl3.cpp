@@ -390,9 +390,6 @@ void ImGui_ImplGlfwGL3_Shutdown()
 
 void ImGui_ImplGlfwGL3_NewFrame()
 {
-    if (!g_FontTexture)
-        ImGui_ImplGlfwGL3_CreateDeviceObjects();
-
     ImGuiIO& io = ImGui::GetIO();
 
     // Setup display size (every frame to accommodate for window resizing)

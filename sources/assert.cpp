@@ -2,11 +2,11 @@
 #include <stdarg.h>
 #include "_assert.h"
 
+void(*Assert::OpPause)() = nullptr;
+
 #ifdef _WIN32
 #include <windows.h>
 __declspec(thread) HHOOK DebugMessageBoxHook;
-
-void(*Assert::OpPause)() = nullptr;
 
 static LRESULT CALLBACK CustomMessageBoxProc(INT nCode, WPARAM wParam, LPARAM lParam)
 {
@@ -71,7 +71,7 @@ static Assert::result ShowMessageBox(const char *file, int line, const char *con
 	}
 	return Assert::result_break;
 #else
-	return Assert::result_break;
+	return Assert::result_ignore_always;
 #endif
 }
 
