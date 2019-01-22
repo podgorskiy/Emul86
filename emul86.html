@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">	
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+    <!-- metadata -->
+    <title>SPBlog</title>
+    <meta name="description" content="">
+    <meta name="keywords" content="blog, pidhorskyi, podgorskiy">
+    <meta name="author" content="Stanislav Podgorskiy">
+	
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+	<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.6.3/css/all.css" integrity="sha384-UHRtZLI+pbxtHCWp1t77Bi1L4ZtiqrqD80Kn4Z8NTSRyMA2Fd33n5dQ8lWUE00s/" crossorigin="anonymous">
+	
+	<style>
+		body {
+			font-family: arial;
+			margin: 0;
+			padding: none;
+			background-color: #1a2025;
+		}
+
+		.emscripten {
+			padding-right: 0;
+			margin-left: auto;
+			margin-right: auto;
+			display: block;
+		}
+
+		div.emscripten {
+			text-align: center;
+		}
+
+
+		/* the canvas *must not* have any border or padding, or mouse coords will be wrong */
+
+		canvas.emscripten {
+			border: 0px none;
+			background-color: black;
+			box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.4), 0 6px 20px 0 rgba(0, 0, 0, 0.4);
+		}
+
+		#emscripten_logo {
+			display: inline-block;
+			margin: 0;
+		}
+
+		.spinner {
+			height: 30px;
+			width: 30px;
+			margin: 0;
+			margin-top: 20px;
+			margin-left: 20px;
+			display: inline-block;
+			vertical-align: top;
+			-webkit-animation: rotation .8s linear infinite;
+			-moz-animation: rotation .8s linear infinite;
+			-o-animation: rotation .8s linear infinite;
+			animation: rotation 0.8s linear infinite;
+			border-left: 5px solid rgb(235, 235, 235);
+			border-right: 5px solid rgb(235, 235, 235);
+			border-bottom: 5px solid rgb(235, 235, 235);
+			border-top: 5px solid rgb(120, 120, 120);
+			border-radius: 100%;
+			background-color: rgb(189, 215, 46);
+		}
+
+		.unselectable {
+			-webkit-touch-callout: none;
+			-webkit-user-select: none;
+			-khtml-user-select: none;
+			-moz-user-select: none;
+			-ms-user-select: none;
+			user-select: none;
+		}
+
+		@-webkit-keyframes rotation {
+			from {
+				-webkit-transform: rotate(0deg);
+			}
+			to {
+				-webkit-transform: rotate(360deg);
+			}
+		}
+
+		@-moz-keyframes rotation {
+			from {
+				-moz-transform: rotate(0deg);
+			}
+			to {
+				-moz-transform: rotate(360deg);
+			}
+		}
+
+		@-o-keyframes rotation {
+			from {
+				-o-transform: rotate(0deg);
+			}
+			to {
+				-o-transform: rotate(360deg);
+			}
+		}
+
+		@keyframes rotation {
+			from {
+				transform: rotate(0deg);
+			}
+			to {
+				transform: rotate(360deg);
+			}
+		}
+
+		#status {
+			display: inline-block;
+			vertical-align: top;
+			margin-top: 30px;
+			margin-left: 20px;
+			font-weight: bold;
+			color: rgb(120, 120, 120);
+		}
+
+		#progress {
+			height: 20px;
+			width: 30px;
+		}
+    </style>
+</head>
+<body>
+
+<!doctype html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Emscripten-Generated Code</title>
+    
+  </head>
+  <body>
+
+	<div class="d-flex justify-content-center">
+		<div class="d-flex flex-column">
+			<div class="d-flex justify-content-center">
+				<div class="spinner" id='spinner'></div>
+				<div class="emscripten" id="status">Downloading...</div>
+
+				<div class="emscripten">
+				  <progress value="0" max="100" id="progress" hidden=1></progress>
+				</div>
+			</div>
+			
+			<div class="d-flex justify-content-center mb-1">
+				<canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+			</div>
+			<div class="d-flex justify-content-between">
+				<div id="IPS" class="h3 text-dark unselectable">IPS:</div>
+				<i id="hdd" class="fas fa-hdd fa-2x"></i>
+			</div>
+			<div class="d-flex justify-content-around mb-1">
+				<div class="btn btn-dark btn-block mt-0 mx-2" onclick="fReboot()"><i class="fas fa-sync-alt mr-2"></i>Reboot</div>
+				<div id='pause' class="btn btn-dark btn-block mt-0 mx-2" onclick="Pause()"><i class="fas fa-pause mr-2"></i>Pause</div>
+				<div id='play' class="btn btn-dark btn-block mt-0 mx-2" onclick="Play()"><i class="fas fa-play mr-2"></i>Play</div>
+				<div class="btn btn-dark btn-block mt-0 mx-2" onclick="GoFullscreen()"><i class="fas fa-arrows-alt mr-2"></i>Go full screen (Esc to exit)</div>
+			</div>
+		</div>
+    </div>
+    <!--<textarea id="output" rows="8"></textarea>-->
+
+
+	<div class="navbar fixed-bottom justify-content-center text-secondary unselectable">
+		Emulator created by Stanislav Pidhorskyi. <a class="ml-2" href="https://github.com/podgorskiy/Emul86">Link to code</a>. Web version made with <a class="ml-2" href="https://kripken.github.io/emscripten-site/index.html">emscripten</a>. All images are taken from <a class="ml-2" href="https://winworldpc.com">WinWorldPC</a>. Copyrights are retained by the original publishers.
+	</div>
+
+    <script type='text/javascript'>
+      var statusElement = document.getElementById('status');
+      var progressElement = document.getElementById('progress');
+      var spinnerElement = document.getElementById('spinner');
+	  
+	  fStart = function(){}
+	  fPause = function(){}
+	  fReboot = function(){}
+	  
+	  function Play() {
+		var element = document.getElementById("play");
+		element.classList.add("disabled");
+		var element = document.getElementById("pause");
+		element.classList.remove("disabled");
+		fStart();
+	  } 
+
+	  function Pause() {
+		var element = document.getElementById("pause");
+		element.classList.add("disabled");
+		var element = document.getElementById("play");
+		element.classList.remove("disabled");
+		fPause();
+	  } 
+	  
+	  function UpdateIPS(x) {
+		var element = document.getElementById("IPS");
+		element.innerHTML = "IPS: " + x;
+	  }
+	  
+	  var lastHddState = 0;
+	  var hhdLightDelay = 0;
+	  
+	  function HDDLight(x) {
+		if (x == 0 && hhdLightDelay != 0)
+		{
+			hhdLightDelay = hhdLightDelay - 1;
+			return;
+		}
+		if (x == lastHddState)
+		{
+			return;
+		}
+		
+		lastHddState = x;
+		
+		var element = document.getElementById("hdd");
+		switch(x) {
+		  case 0:
+			element.classList.remove("text-danger");
+			element.classList.remove("text-success");
+			element.classList.add("text-text-muted");
+			break;
+		  case 1:
+			element.classList.remove("text-danger");
+			element.classList.add("text-success");
+			element.classList.remove("text-text-muted");
+			hhdLightDelay = 15;
+			break;
+		  case 2:
+		  case 3:
+			element.classList.add("text-danger");
+			element.classList.remove("text-success");
+			element.classList.remove("text-text-muted");
+			hhdLightDelay = 15;
+			break;
+		} 
+	  }
+	  
+	  Play();
+	  
+	  GoFullscreen = function()
+	  {
+          var canvas = document.getElementById('canvas');
+		  const d = window.document.documentElement;
+		  const requestFullscreen = d.requestFullscreen 
+			  || d.mozRequestFullScreen 
+			  || d.webkitRequestFullScreen 
+			  || d.msRequestFullscreen;
+		  requestFullscreen.call(canvas);
+	  }
+	  
+      var Module = {
+        preRun: [],
+        postRun: function(){
+			fStart = Module.cwrap('emStart', 'null', []);
+			fPause = Module.cwrap('emPause', 'null', []);
+			fReboot = Module.cwrap('emReboot', 'null', []);
+		},
+        print: (function() {
+          return function(text) {
+            if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+            console.log(text);
+          };
+        })(),
+        printErr: function(text) {
+          if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+          if (0) { // XXX disabled for safety typeof dump == 'function') {
+            dump(text + '\n'); // fast, straight to the real console
+          } else {
+            console.error(text);
+          }
+        },
+        canvas: (function() {
+          var canvas = document.getElementById('canvas');
+
+          // As a default initial behavior, pop up an alert when webgl context is lost. To make your
+          // application robust, you may want to override this behavior before shipping!
+          // See http://www.khronos.org/registry/webgl/specs/latest/1.0/#5.15.2
+          canvas.addEventListener("webglcontextlost", function(e) { alert('WebGL context lost. You will need to reload the page.'); e.preventDefault(); }, false);
+
+          return canvas;
+        })(),
+        setStatus: function(text) {
+          if (!Module.setStatus.last) Module.setStatus.last = { time: Date.now(), text: '' };
+          if (text === Module.setStatus.last.text) return;
+          var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+          var now = Date.now();
+          if (m && now - Module.setStatus.last.time < 30) return; // if this is a progress update, skip it if too soon
+          Module.setStatus.last.time = now;
+          Module.setStatus.last.text = text;
+          if (m) {
+            text = m[1];
+            progressElement.value = parseInt(m[2])*100;
+            progressElement.max = parseInt(m[4])*100;
+            progressElement.hidden = false;
+            spinnerElement.hidden = false;
+          } else {
+            progressElement.value = null;
+            progressElement.max = null;
+            progressElement.hidden = true;
+            if (!text) spinnerElement.style.display = 'none';
+          }
+          statusElement.innerHTML = text;
+        },
+        totalDependencies: 0,
+        monitorRunDependencies: function(left) {
+          this.totalDependencies = Math.max(this.totalDependencies, left);
+          Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies-left) + '/' + this.totalDependencies + ')' : 'All downloads complete.');
+        }
+      };
+      Module.setStatus('Downloading...');
+      window.onerror = function(event) {
+        // TODO: do not warn on ok events like simulating an infinite loop or exitStatus
+        Module.setStatus('Exception thrown, see JavaScript console');
+        spinnerElement.style.display = 'none';
+        Module.setStatus = function(text) {
+          if (text) Module.printErr('[post-exception status] ' + text);
+        };
+      };
+    </script>
+    <script async type="text/javascript" src="emul86.js"></script>
+  </body>
+</html>
+
+

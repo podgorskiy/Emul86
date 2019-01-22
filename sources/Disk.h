@@ -2,6 +2,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <memory>
+#include <string>
 
 struct DiskImpl;
 
@@ -17,12 +18,12 @@ public:
 		uint16_t numHeads;
 		uint8_t drvNum;
 		uint32_t volID;
-		char volLabel[12];
-		char fileSysType[9];
+		char volLabel[12 + 512];
+		char fileSysType[9 + 512];
 	};
 	Disk();
 
-	void Open(const char* path);
+	void Open(const char* path, bool inmemory);
 
 	void Close();
 
@@ -38,16 +39,11 @@ public:
 
 	size_t size() const;
 
+	std::string GetPath() const;
 private:
 	uint32_t ToLBA(uint16_t cylinder, uint8_t head, uint8_t sector);
-	void Read(char* dst, uint32_t location, uint32_t size);
-	void Write(const char* dst, uint32_t location, uint32_t size);
 
 	void ReadBIOS_ParameterBlock(uint32_t offset);
 
-	uint8_t ReadB(uint32_t location);
-	uint16_t ReadW(uint32_t location);
-	uint32_t ReadDW(uint32_t location);
-	
 	std::shared_ptr<DiskImpl> m_impl;
 };

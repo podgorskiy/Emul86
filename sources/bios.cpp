@@ -4,6 +4,7 @@
 #include <chrono>
 #include <ctime>
 
+//#define FORCE_ZERO_TIME
 #ifdef FORCE_ZERO_TIME
 #define TIME_ZERO(X) 0
 #else
@@ -11,9 +12,10 @@
 #endif
 
 
-
 void BIOS::InitBIOSDataArea()
 {
+	// http://stanislavs.org/helppc/bios_data_area.html
+
 	// zero out BIOS data area(40:00 .. 40:ff)
 	for (int i = 0; i < 0x100; io.MemStoreB(BIOS_DATA_OFFSET, i++, 0));
 
@@ -31,12 +33,8 @@ void BIOS::InitBIOSDataArea()
 	io.MemStoreW(BIOS_DATA_OFFSET, 0x0004, 0x03E8); // COM3
 	io.MemStoreW(BIOS_DATA_OFFSET, 0x0006, 0x02E8); // COM4
 
-	io.MemStoreB(BIOS_DATA_OFFSET, VIDEO_MOD, 0x03); // Current active video mode
-
-	io.MemStoreW(BIOS_DATA_OFFSET, NUMBER_OF_SCREEN_COLUMNS, 80); // Screen width in text columns
-	io.MemStoreB(BIOS_DATA_OFFSET, BIOSMEM_CHAR_HEIGHT, 10);
-	io.MemStoreB(BIOS_DATA_OFFSET, BIOSMEM_NB_ROWS, 24);
-
+	io.ActivateVideoMode(0x03);
+	
 	io.MemStoreB(BIOS_DATA_OFFSET, 0x96, 0x10); //101/102 enhanced keyboard installed
 
 	io.MemStoreString(BIOS_SEGMENT, 0xff00, "(c) 2018 Emul86 BIOS");
@@ -164,8 +162,8 @@ void BIOS::InitBIOSDataArea()
 	//equpment = 1 + 2 * 0 + 4 * 1 + 8 * 0 + 16 * 0 + 32 * 0 + 64 * 0 + 128 * 0 + 256 * 0 + 512 * 1;
 	io.MemStoreW(BIOS_DATA_OFFSET, EQUIPMENT_LIST_FLAGS, equpment);
 
-	int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, NUMBER_OF_SCREEN_COLUMNS);
-	int screenHeight = 25;
+	int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, BIOSMEM_NB_COLS);
+	int screenHeight = io.MemGetB(BIOS_DATA_OFFSET, BIOSMEM_NB_ROWS) + 1;
 
 	for (int page = 0; page < 8; ++page)
 	{
@@ -212,6 +210,9 @@ void BIOS::InitBIOSDataArea()
 #define SET_ES(b) m_cpu.SetSegment(CPU::ES, b)
 #define SET_BP(b) m_cpu.SetRegister<word>(CPU::BP, b)
 #define SET_DI(b) m_cpu.SetRegister<word>(CPU::DI, b)
+#define SET_SI(b) m_cpu.SetRegister<word>(CPU::SI, b)
+
+#define UNSUPPORTED_INT(X) WARN("UNSUPPORTED INT 0x%02x \nAH: 0x%02x, AL: 0x%02x\nBH: 0x%02x, BL: 0x%02x\nCX: 0x%02x\n", X, GET_AH(), GET_AL(), GET_BH(), GET_BL(), GET_CX());
 
 
 void BIOS::Int(byte x)
@@ -225,12 +226,12 @@ void BIOS::Int(byte x)
 		Int10VideoServices(function, arg);
 		break;
 
-	// BIOS Equipment Determination / BIOS Equipment Flags
+		// BIOS Equipment Determination / BIOS Equipment Flags
 	case 0x11:
 		SET_AX(io.MemGetW(BIOS_DATA_OFFSET, EQUIPMENT_LIST_FLAGS));
 		break;
 
-	// Conventional Memory Size
+		// Conventional Memory Size
 	case 0x12:
 		SET_AX(io.MemGetW(BIOS_DATA_OFFSET, MEMORY_SIZE_FIELD));
 		break;
@@ -259,16 +260,17 @@ void BIOS::Int(byte x)
 		Int1ARealTimeClockServices(function, arg);
 		break;
 
-	// Other interrupts
+		// Other interrupts
 	default:
-		// If it is not a dummy IRET, then execute it, otherwise warn about not implemented interrupt
-		if (io.MemGetW(0x0, x * 4) != DEFAULT_HANDLER && io.MemGetW(0x0, x * 4 + 2) != BIOS_SEGMENT)
+		// If it is not a dummy IRET, then execute it, otherwise fallback to hardcoded ones
+		if (io.IsCustomIntHandlerInstalled(x))
 		{
 			m_cpu.Interrupt(x);
 		}
 		else
 		{
-			ASSERT(false, "Unknown interrupt: 0x%s\n", n2hexstr(x).c_str());
+			UNSUPPORTED_INT(x);
+			m_cpu.Interrupt(x);
 		}
 	}
 }
@@ -286,9 +288,15 @@ void BIOS::Int10VideoServices(int function, int arg)
 	switch (function)
 	{
 		//Set Video Mode
+		// https://utcc.utoronto.ca/~pkern/stuff/cterm+/cterm/int-10
 	case 0x00:
-		io.MemStoreB(BIOS_DATA_OFFSET, VIDEO_MOD, arg);
-		printf("Video mode: %d\n", arg);
+		{
+			io.MemStoreB(BIOS_DATA_OFFSET, BIOSMEM_CURRENT_MODE, arg);
+			io.ActivateVideoMode(arg);
+			printf("Video mode: %d\n", arg);
+			uint32_t p = CGA_DISPLAY_RAM << 4;
+			memset(io.GetRamRawPointer() + p, 0, 0x4000); // 32k
+		}
 		break;
 
 		// Set cursor type
@@ -352,8 +360,8 @@ void BIOS::Int10VideoServices(int function, int arg)
 		int y2 = GET_DH();
 		int x2 = GET_DL();
 		int active_page = io.MemGetB(BIOS_DATA_OFFSET, ACTIVE_DISPLAY_PAGE);
-		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, NUMBER_OF_SCREEN_COLUMNS);
-		int screenHeight = 25;
+		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, BIOSMEM_NB_COLS);
+		int screenHeight = io.MemGetB(BIOS_DATA_OFFSET, BIOSMEM_NB_ROWS) + 1;
 		uint32_t p = 0xB800 << 4;
 
 		for (int row = y1; row <= y2; ++row)
@@ -387,8 +395,8 @@ void BIOS::Int10VideoServices(int function, int arg)
 		int y2 = GET_DH();
 		int x2 = GET_DL();
 		int active_page = io.MemGetB(BIOS_DATA_OFFSET, ACTIVE_DISPLAY_PAGE);
-		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, NUMBER_OF_SCREEN_COLUMNS);
-		int screenHeight = 25;
+		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, BIOSMEM_NB_COLS);
+		int screenHeight = io.MemGetB(BIOS_DATA_OFFSET, BIOSMEM_NB_ROWS) + 1;
 		uint32_t p = 0xB800 << 4;
 
 		for (int row = y2; row >= y1; --row)
@@ -425,8 +433,8 @@ void BIOS::Int10VideoServices(int function, int arg)
 		int attribute = 7;
 		int cursor = io.MemGetW(BIOS_DATA_OFFSET, CURSOR_POSITION + 2 * page);
 		int xcurs = cursor & 0x00ff; int ycurs = (cursor & 0xff00) >> 8;
-		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, NUMBER_OF_SCREEN_COLUMNS);
-		int screenHeight = 25;
+		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, BIOSMEM_NB_COLS);
+		int screenHeight = io.MemGetB(BIOS_DATA_OFFSET, BIOSMEM_NB_ROWS) + 1;
 
 		if (symbol == '\b')
 		{
@@ -490,8 +498,8 @@ void BIOS::Int10VideoServices(int function, int arg)
 		int cursor = io.MemGetW(BIOS_DATA_OFFSET, CURSOR_POSITION + 2 * page);
 		int xcurs = cursor & 0x00ff; int ycurs = (cursor & 0xff00) >> 8;
 		int active_page = io.MemGetB(BIOS_DATA_OFFSET, ACTIVE_DISPLAY_PAGE);
-		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, NUMBER_OF_SCREEN_COLUMNS);
-		int screenHeight = 25;
+		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, BIOSMEM_NB_COLS);
+		int screenHeight = io.MemGetB(BIOS_DATA_OFFSET, BIOSMEM_NB_ROWS) + 1;
 
 		if (ycurs >= screenHeight)
 		{
@@ -527,8 +535,8 @@ void BIOS::Int10VideoServices(int function, int arg)
 		char page = GET_BH();
 		int cursor = io.MemGetW(BIOS_DATA_OFFSET, CURSOR_POSITION + 2 * page);
 		int xcurs = cursor & 0x00ff; int ycurs = (cursor & 0xff00) >> 8;
-		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, NUMBER_OF_SCREEN_COLUMNS);
-		int screenHeight = 25;
+		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, BIOSMEM_NB_COLS);
+		int screenHeight = io.MemGetB(BIOS_DATA_OFFSET, BIOSMEM_NB_ROWS) + 1;
 		uint16_t result = io.MemGetW(CGA_DISPLAY_RAM, ycurs * screenWidth * 2 + xcurs * 2 + screenHeight * screenWidth * 2 * page);
 		SET_AX(result);
 	}
@@ -544,9 +552,9 @@ void BIOS::Int10VideoServices(int function, int arg)
 		*/
 	{
 		int active_page = io.MemGetB(BIOS_DATA_OFFSET, ACTIVE_DISPLAY_PAGE);
-		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, NUMBER_OF_SCREEN_COLUMNS);
-		int screenHeight = 25;
-		int mode = io.MemGetB(BIOS_DATA_OFFSET, VIDEO_MOD);
+		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, BIOSMEM_NB_COLS);
+		int screenHeight = io.MemGetB(BIOS_DATA_OFFSET, BIOSMEM_NB_ROWS) + 1;
+		int mode = io.MemGetB(BIOS_DATA_OFFSET, BIOSMEM_CURRENT_MODE);
 		SET_AH(screenWidth);
 		SET_AL(mode);
 		SET_BH(active_page);
@@ -578,8 +586,8 @@ void BIOS::Int10VideoServices(int function, int arg)
 		int cursor = io.MemGetW(BIOS_DATA_OFFSET, CURSOR_POSITION + 2 * page);
 		int xcurs = cursor & 0x00ff; int ycurs = (cursor & 0xff00) >> 8;
 		int active_page = io.MemGetB(BIOS_DATA_OFFSET, ACTIVE_DISPLAY_PAGE);
-		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, NUMBER_OF_SCREEN_COLUMNS);
-		int screenHeight = 25;
+		int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, BIOSMEM_NB_COLS);
+		int screenHeight = io.MemGetB(BIOS_DATA_OFFSET, BIOSMEM_NB_ROWS) + 1;
 		for (int i = 0; i < count; ++i)
 		{
 			io.MemStoreW(CGA_DISPLAY_RAM, ycurs * screenWidth * 2 + xcurs * 2 + screenHeight * screenWidth * 2 * page, symbol + (7 << 8));
@@ -619,8 +627,10 @@ void BIOS::Int10VideoServices(int function, int arg)
 			SET_BL(3);
 			SET_CX(9);
 			break;
+		case 0x0:
+			break;
 		default:
-			ASSERT(false, "Unknown int10 12 function: 0x%s\n", n2hexstr(arg).c_str());
+			UNSUPPORTED_INT(0x10);
 		}
 	}
 	break;
@@ -663,11 +673,11 @@ void BIOS::Int10VideoServices(int function, int arg)
 
 				break;
 			default:
-				ASSERT(false, "Unknown int10 12 function: 0x%s\n", n2hexstr(arg).c_str());
+				UNSUPPORTED_INT(0x10);
 			}
 			break;
 		default:
-			ASSERT(false, "Unknown int10 12 function: 0x%s\n", n2hexstr(arg).c_str());
+			UNSUPPORTED_INT(0x10);
 		}
 	}
 	break;
@@ -726,12 +736,33 @@ void BIOS::Int10VideoServices(int function, int arg)
 		SET_BX(0x5637);
 		break;
 
+	// UltraVision - GET STATUS (INSTALLATION CHECK)
+	case 0xCC:
+		SET_CX(0xABCD);
+		SET_AL(0);
+		SET_BX(0x00F0);
+		SET_DX(0);
+		SET_SI(0x0102);
+		break;
+
+	case 0xCD:
+		switch (arg)
+		{
+			// VIDEO - UltraVision - GET UltraVision TEXT MODE (EGA,VGA)
+		case 0x04:
+			SET_AL(0x11);
+			break;
+		default:
+			UNSUPPORTED_INT(0x10);
+		}
+		break;
+
 	// Set Color Palette
 	case 0x0B:
 		break;
 
 	default:
-		ASSERT(false, "Unknown int10 function: 0x%s\n", n2hexstr(function).c_str());
+		UNSUPPORTED_INT(0x10);
 		break;
 	}
 }
@@ -740,8 +771,8 @@ void BIOS::Int10VideoServices(int function, int arg)
 void BIOS::scrollOneLine()
 {
 	int active_page = io.MemGetB(BIOS_DATA_OFFSET, ACTIVE_DISPLAY_PAGE);
-	int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, NUMBER_OF_SCREEN_COLUMNS);
-	int screenHeight = 25;
+	int screenWidth = io.MemGetW(BIOS_DATA_OFFSET, BIOSMEM_NB_COLS);
+	int screenHeight = io.MemGetB(BIOS_DATA_OFFSET, BIOSMEM_NB_ROWS) + 1;
 	for (int row = 0; row < screenHeight; ++row)
 	{
 		if (row + 1 < screenHeight)
@@ -953,7 +984,7 @@ void BIOS::Int13DiskIOServices(int function, int arg)
 		break;
 
 	default:
-		ASSERT(false, "Unknown int13 function: 0x%s\n", n2hexstr(function).c_str());
+		UNSUPPORTED_INT(0x13);
 	}
 }
 
@@ -977,7 +1008,7 @@ void BIOS::Int14AsynchronousCommunicationsServices(int function, int arg)
 		SET_AX(0);
 		break;
 	default:
-		ASSERT(false, "Unknown int14 function: 0x%s\n", n2hexstr(function).c_str());
+		UNSUPPORTED_INT(0x14);
 	}
 }
 
@@ -1101,7 +1132,7 @@ void BIOS::Int15SystemBIOSServices(int function, int arg)
 		break;
 
 	default:
-		ASSERT(false, "Unknown int15 function: 0x%s\n", n2hexstr(function).c_str());
+		UNSUPPORTED_INT(0x15);
 	}
 }
 
@@ -1165,7 +1196,7 @@ void BIOS::Int16KeyboardServices(int function, int arg)
 		break;
 
 	default:
-		ASSERT(false, "Unknown int16 function: 0x%s\n", n2hexstr(function).c_str());
+		UNSUPPORTED_INT(0x16);
 	}
 }
 
@@ -1182,7 +1213,7 @@ void BIOS::Int17PrinterBIOSServices(int function, int arg)
 		}
 		break;
 	default:
-		ASSERT(false, "Unknown int17 function: 0x%s\n", n2hexstr(function).c_str());
+		UNSUPPORTED_INT(0x17);
 	}
 }
 void BIOS::Int1ARealTimeClockServices(int function, int arg)
@@ -1258,5 +1289,7 @@ void BIOS::Int1ARealTimeClockServices(int function, int arg)
 		CLEAR_CF();
 		break;
 	}
+	default:
+		UNSUPPORTED_INT(0x1A);
 	}
 }

@@ -151,7 +151,7 @@ struct MemoryEditor
         Open = true;
         if (ImGui::Begin(title, &Open, ImGuiWindowFlags_NoScrollbar))
         {
-            if (ImGui::IsRootWindowOrAnyChildHovered() && ImGui::IsMouseClicked(1))
+            if (ImGui::IsRootWindowOrAnyChildHovered() && ImGui::IsMouseReleased(1))
                 ImGui::OpenPopup("context");
             DrawContents(mem_data, mem_size, base_display_addr);
             if (ContentsWidthChanged)
@@ -322,7 +322,7 @@ struct MemoryEditor
                         else
                             ImGui::Text("%02X ", b);
                     }
-                    if (!ReadOnly && ImGui::IsItemHovered() && ImGui::IsMouseClicked(0))
+                    if (!ReadOnly && ImGui::IsItemHovered() && ImGui::IsMouseReleased(0))
                     {
                         DataEditingTakeFocus = true;
                         data_editing_addr_next = addr;
