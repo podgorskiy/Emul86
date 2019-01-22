@@ -1,11 +1,18 @@
 #include "Application.h"
 #include "_assert.h"
-#include "common_gl.h"
 #include <imgui.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#endif
 #include <fstream>
 #include <sstream>
 #include <string>
 
+#ifdef __EMSCRIPTEN__
+#else
+#define EM_ASM_(...)
+#define EM_ASM(...)
+#endif
 
 namespace Assert
 {
@@ -34,7 +41,9 @@ int Application::Init()
 	Disk disk;	disk.Open("c.img", true);
 	m_io.AddDisk(disk);
 	Boot();
+	m_run = true;
 #endif
+
 	return EXIT_SUCCESS;
 }
 
@@ -42,13 +51,6 @@ int Application::Init()
 Application::~Application()
 {
 }
-
-
-void Application::Resize(int width, int height)
-{
-	glViewport(0, 0, width, height);
-}
-
 
 void Application::SetScale(int scale)
 {
@@ -101,8 +103,6 @@ void Application::Update()
 	{
 		m_run = false;
 	}
-#else
-	m_run = true;
 #endif
 
 	if (m_run)
@@ -128,8 +128,8 @@ void Application::Update()
 
 	for (int i = 0; m_run && !m_io.IsKeyboardHalted(); ++i)
 	{
-		// Clock related stuff is updated once per 500 cycles
-		if (i % 500 == 0)
+		// Clock related stuff is updated once per 400 cycles
+		if (i % 400 == 0)
 		{
 			auto current_timestamp = std::chrono::steady_clock::now();
 			std::chrono::duration<float> elapsed_time_from_frame = (current_timestamp - framestart);
@@ -151,6 +151,9 @@ void Application::Update()
 					instructions = 0;
 					seconds = 0;
 					printf("IPS: %d\n", (int)IPS);
+					EM_ASM_({
+						UpdateIPS($0);
+					}, (int)IPS);
 				}
 				break;
 			}
@@ -175,6 +178,10 @@ void Application::Update()
 	m_cpu.GUI();
 	DiskGUI();
 #endif
+
+	EM_ASM({
+		HDDLight($0);
+	}, (int)m_io.HDDLight());
 
 	m_io.DrawScreen(m_scale);
 }
@@ -250,6 +257,11 @@ void Application::Boot(int address)
 void Application::Boot()
 {
 	Boot(0x7C00);
+}
+
+void Application::SetRunning(bool enabled)
+{
+	m_run = enabled;
 }
 
 void Application::DiskGUI()

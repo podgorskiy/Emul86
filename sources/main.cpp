@@ -122,21 +122,23 @@ int main(int argc, char **argv)
 #ifndef __EMSCRIPTEN__
 	int scale = static_cast<int>(round(dpix / 72.0f));
 #else
-	/*
-	float devicePixelRatio = EM_ASM_DOUBLE_V(
+	float windowHeight = EM_ASM_DOUBLE_V(
 	{
-		if (window.devicePixelRatio != undefined)
-		{
-			return window.devicePixelRatio;
-		}
-		else
-		{
-			return 1.0;
-		}
+		var h = window.innerHeight
+		|| document.documentElement.clientHeight
+		|| document.body.clientHeight;
+	return h;
 	}
 	);
-	*/
-	int scale = 2;// static_cast<int>(round(devicePixelRatio));
+	float windowWidth = EM_ASM_DOUBLE_V(
+	{
+		var w = window.innerWidth
+		|| document.documentElement.clientWidth
+		|| document.body.clientWidth;
+	return w;
+	}
+	);
+	int scale = windowHeight < 980 ? 1 : (windowWidth < 1285 ? 1 : 2);
 
 	printf("scale %d\n", scale);
 #endif
@@ -235,7 +237,7 @@ int main(int argc, char **argv)
 		glfwSetWindowSizeCallback(window, [](GLFWwindow* window, int width, int height)
 		{
 			Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
-			app->Resize(width, height);
+			glViewport(0, 0, width, height);
 		});
 
 		glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int, int action, int mods)
@@ -323,6 +325,23 @@ int main(int argc, char **argv)
 #endif
 	}
 
-
 	return 0;
+}
+
+extern "C" 
+{
+	void emStart(void)
+	{
+		app->SetRunning(true);
+	}
+
+	void emPause(void)
+	{
+		app->SetRunning(false);
+	}
+
+	void emReboot(void)
+	{
+		app->Boot();
+	}
 }

@@ -14,7 +14,6 @@ public:
 	int Init();
 	void Update();
 	void LoadData(uint32_t dest, const char* source, uint32_t size);
-	void Resize(int width, int height);
 	void SetScale(int scale);
 	void Boot();
 	void Boot(int address);
@@ -23,6 +22,8 @@ public:
 	IO& GetIO();
 
 	void DiskGUI();
+
+	void SetRunning(bool enabled);
 
 	struct GuiHelper
 	{

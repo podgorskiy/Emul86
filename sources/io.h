@@ -16,6 +16,13 @@ public:
 		WORD,
 	};
 
+	enum HddLightStatus
+	{
+		OFF = 0,
+		READ = 1,
+		WRITE = 2,
+	};
+
 	void Init();
 	void DrawScreen(int m_displayScale);
 	void ActivateVideoMode(int mode);
@@ -38,6 +45,7 @@ public:
 	bool WriteDisk(int diskNo, uint32_t ram_address, word cylinder, byte head, byte sector, uint32_t sectorCount);
 	const Disk::BIOS_ParameterBlock& GetDiskBPB(int diskNo) const;
 	int GetBootableDisk() const;
+	HddLightStatus HDDLight();
 
 	// Memory/Ports
 	void ClearMemory();
@@ -148,8 +156,21 @@ private:
 
 	DAC_controll m_dac;
 
+	HddLightStatus m_hddLight = OFF;
+
 	std::chrono::time_point<std::chrono::system_clock> m_start;
 };
+
+inline IO::HddLightStatus operator |(IO::HddLightStatus a, IO::HddLightStatus b)
+{
+	return static_cast<IO::HddLightStatus>(static_cast<int>(a) | static_cast<int>(b));
+}
+
+inline IO::HddLightStatus operator |=(IO::HddLightStatus& a, IO::HddLightStatus b)
+{
+	a = a | b;
+	return a;
+}
 
 //#define ENABLE_A20
 

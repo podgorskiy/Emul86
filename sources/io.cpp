@@ -297,26 +297,6 @@ void IO::ActivateVideoMode(int mode)
 		//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
 		glBindTexture(GL_TEXTURE_2D, 0);
-
-		/*
-		glGenFramebuffers(1, &m_fbo);
-		glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
-
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_texture, 0);
-
-		int err;
-		if ((err = glCheckFramebufferStatus(GL_FRAMEBUFFER)) != GL_FRAMEBUFFER_COMPLETE)
-		{
-			switch (err) {
-			case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT:WARN("INCOMPLETE_ATTACHMENT"); break;
-			case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT:WARN("MISSING_ATTACHMENT"); break;
-				//case GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS			:WARN("DIMENSIONS");break;
-				//case GL_FRAMEBUFFER_INCOMPLETE_FORMATS			:WARN("FORMATS");break;
-			case GL_FRAMEBUFFER_UNSUPPORTED:WARN("UNSUPPORTED"); break;
-			default:WARN("UKNOWN"); break;
-			}
-		}
-		*/
 	}
 }
 
@@ -357,9 +337,9 @@ void IO::BlitData(int displayScale)
 	glUniform1iv(u_text, 1, &i);
 	float val[4];
 	val[0] = 0;
-	val[1] = 1.0 - vm.screen_height * displayScale * 2 / float(fbHeight);
-	val[2] = vm.screen_width * displayScale * 2 / float(fbWidth);
-	val[3] = vm.screen_height * displayScale * 2 / float(fbHeight);
+	val[1] = 1.0f - vm.screen_height * displayScale * 2.0f / float(fbHeight);
+	val[2] = vm.screen_width * displayScale * 2.0f / float(fbWidth);
+	val[3] = vm.screen_height * displayScale * 2.0f / float(fbHeight);
 
 	glUniform4fv(u_posoffset, 1, val);
 
@@ -670,6 +650,7 @@ bool IO::HasDisk(int diskNo) const
 
 bool IO::ReadDisk(int diskNo, uint32_t ram_address, word cylinder, byte head, byte sector, uint32_t sectorCount)
 {
+	m_hddLight |= READ;
 	Disk disk = diskNo & 0x80 ? m_hardDrives[diskNo & 0x7F] : m_floppyDrives[diskNo & 0x7F];
 	return disk.Read((char*)m_ram + ram_address, cylinder, head, sector, sectorCount);
 }
@@ -677,6 +658,7 @@ bool IO::ReadDisk(int diskNo, uint32_t ram_address, word cylinder, byte head, by
 
 bool IO::WriteDisk(int diskNo, uint32_t ram_address, word cylinder, byte head, byte sector, uint32_t sectorCount)
 {
+	m_hddLight |= WRITE;
 	Disk disk = diskNo & 0x80 ? m_hardDrives[diskNo & 0x7F] : m_floppyDrives[diskNo & 0x7F];
 	return disk.Write((const char*)m_ram + ram_address, cylinder, head, sector, sectorCount);
 }
@@ -708,6 +690,12 @@ int IO::GetBootableDisk() const
 	return -1;
 }
 
+IO::HddLightStatus IO::HDDLight()
+{
+	HddLightStatus ret = m_hddLight;
+	m_hddLight = OFF;
+	return ret;
+}
 
 bool IO::SetCurrentKey(int c)
 {
