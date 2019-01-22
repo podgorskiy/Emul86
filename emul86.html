@@ -155,7 +155,7 @@
 			</div>
 			<div class="d-flex justify-content-between">
 				<div id="IPS" class="h3 text-dark unselectable">IPS:</div>
-				<i id="hdd" class="fas fa-hdd fa-2x text-danger"></i>
+				<i id="hdd" class="fas fa-hdd fa-2x"></i>
 			</div>
 			<div class="d-flex justify-content-around mb-1">
 				<div class="btn btn-dark btn-block mt-0 mx-2" onclick="fReboot()"><i class="fas fa-sync-alt mr-2"></i>Reboot</div>
@@ -323,7 +323,7 @@
     </script>
     <script>
           (function() {
-            var memoryInitializer = 'emul86.html.mem';
+            var memoryInitializer = 'emul86.js.mem';
             if (typeof Module['locateFile'] === 'function') {
               memoryInitializer = Module['locateFile'](memoryInitializer);
             } else if (Module['memoryInitializerPrefixURL']) {
