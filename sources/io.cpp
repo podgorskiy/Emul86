@@ -482,6 +482,7 @@ void IO::ClearMemory()
 {
 	memset(m_ram, 0, 0x200000);
 	memset(m_port, 0, 0x10000);
+	m_int16_halt = false;
 }
 
 byte* IO::GetRamRawPointer()
@@ -708,7 +709,6 @@ bool IO::SetCurrentKey(int c)
 	}
 	return false;
 }
-
 
 void IO::PushKey(int c, bool release)
 {
@@ -1109,36 +1109,45 @@ void IO::AddCpu(CPU & cpu)
 
 void IO::GUI()
 {
-	/*
-	char buff[128];
-	ImGui::Begin("CPU Status");
+	ImGui::Columns(2, "mycolumns");
+	ImGui::Separator();
+	ImGui::Text("Floppy"); ImGui::NextColumn();
+	ImGui::Text("Hard"); ImGui::NextColumn();
+	ImGui::Separator();
 
-	ImGui::Text("%s %s %s", dbg_cmd_address, dbg_cmd_name, dbg_args);
-	ImGui::NewLine();
-	for (int i = 0; i < 8; ++i)
+	int bootdisk = GetBootableDisk();
+
+	for (int i = 0, j = 0; i < m_floppyDrives.size() || j < m_hardDrives.size(); ++i, ++j)
 	{
-		ImVec4 color = m_registers[i] == m_old_registers[i] ? ImVec4(0.0f, 0.0f, 0.0f, 1.0f) : ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
-		n2hexstr(buff, m_registers[i]);
-		ImGui::TextColored(color, "%s=%s", m_regNames[i + 8], buff);
-		ImGui::SameLine();
+		if (i < m_floppyDrives.size())
+		{
+			if (i == bootdisk)
+			{
+				ImGui::Text("B:");
+				ImGui::SameLine();
+			}
+			ImGui::Text("%s", m_floppyDrives[i].GetPath().c_str());
+			ImGui::Text("totSec16: %d", m_floppyDrives[i].GetBiosBlock().totSec16);
+			//ImGui::Text("Label: %s", m_floppyDrives[i].GetBiosBlock().volLabel);
+			//ImGui::Text("FS: %s", m_floppyDrives[i].GetBiosBlock().fileSysType);
+		}
+		ImGui::NextColumn();
+		if (j < m_hardDrives.size())
+		{
+			if ((j | 0x80) == bootdisk)
+			{
+				ImGui::Text("B:");
+				ImGui::SameLine();
+			}
+			ImGui::Text("%s", m_hardDrives[j].GetPath().c_str());
+			ImGui::Text("totSec16: %d", m_hardDrives[i].GetBiosBlock().totSec16);
+			//ImGui::Text("Label: %s", m_hardDrives[i].GetBiosBlock().volLabel);
+			//ImGui::Text("FS: %s", m_hardDrives[i].GetBiosBlock().fileSysType);
+		}
+		ImGui::NextColumn();
 	}
-	ImGui::NewLine();
-
-	for (int i = 0; i < 4; ++i)
-	{
-		ImVec4 color = m_segments[i] == m_old_segments[i] ? ImVec4(0.0f, 0.0f, 0.0f, 1.0f) : ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
-		n2hexstr(buff, m_segments[i]);
-		ImGui::TextColored(color, "%s=%s", m_segNames[i], buff);
-		ImGui::SameLine();
-	}
-	ImGui::NewLine();
-
-	n2hexstr(buff, IP);
-	ImGui::Text("IP=%s", buff);
-	ImGui::SameLine();
-	n2hexstr(buff, m_flags);
-	ImGui::Text("F=%s", buff);
-	*/
+	ImGui::Separator();
+	ImGui::Columns(1);
 }
 
 bool IO::IsCustomIntHandlerInstalled(int x)

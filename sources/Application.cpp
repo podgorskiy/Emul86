@@ -37,12 +37,11 @@ int Application::Init()
 	m_io.AddCpu(m_cpu);
 	m_gui.Init();
 
-#ifndef _DEBUG
+//#ifndef EMUL86_GUI
 	Disk disk;	disk.Open("c.img", true);
 	m_io.AddDisk(disk);
 	Boot();
-	m_run = true;
-#endif
+//#endif
 
 	return EXIT_SUCCESS;
 }
@@ -84,7 +83,7 @@ void Application::Update()
 	g_frame++;
 	bool singleStep = false;
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 	static word stopAt_segment = 0;
 	static word stopAt_offset = 0;
 	uint32_t stopAt = select(stopAt_segment, stopAt_offset);
@@ -96,6 +95,15 @@ void Application::Update()
 	}
 	ImGui::SameLine();
 	ImGui::Checkbox("Run", &m_run);
+
+	static word loadAddress = 0x7C00;
+	ImGui::PushItemWidth(75 * ImGui::GetIO().FontGlobalScale);
+	m_gui.InputWord("Boot addr.", &loadAddress);
+
+	if (ImGui::Button("Boot", ImVec2(60 * ImGui::GetIO().FontGlobalScale, 30 * ImGui::GetIO().FontGlobalScale)))
+	{
+		Boot(loadAddress);
+	}
 
 	m_gui.InputSegmentOffset("Breakpoint", &stopAt_segment, &stopAt_offset);
 
@@ -118,7 +126,7 @@ void Application::Update()
 
 	std::chrono::time_point<std::chrono::steady_clock> framestart = std::chrono::steady_clock::now();
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 	if (singleStep)
 	{
 		m_cpu.Step();
@@ -151,9 +159,11 @@ void Application::Update()
 					instructions = 0;
 					seconds = 0;
 					printf("IPS: %d\n", (int)IPS);
+
 					EM_ASM_({
 						UpdateIPS($0);
 					}, (int)IPS);
+
 				}
 				break;
 			}
@@ -161,7 +171,7 @@ void Application::Update()
 		m_cpu.Step();
 		++instructions; 
 		++g_instruction;
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 		if (select(m_cpu.GetSegment(CPU::CS), m_cpu.IP) == stopAt || singleStep) 
 		{
 			m_run = false;
@@ -171,7 +181,7 @@ void Application::Update()
 #endif
 	}
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 	ImGui::Text("IPS: %d", (int)IPS);
 
 	ImGui::End();
@@ -252,6 +262,7 @@ void Application::Boot(int address)
 	m_cpu.IP = address;
 	m_cpu.SetSegment(CPU::CS, 0);
 	m_start = std::chrono::steady_clock::now();
+	m_run = true;
 }
 
 void Application::Boot()
@@ -268,12 +279,7 @@ void Application::DiskGUI()
 {
 	ImGui::Begin("Disk");
 	
-	if (ImGui::Button("Clear Disks"))
-	{
-		m_io.ClearDisks();
-	}
-
-	static std::vector<std::string> disks = { "F:/c.img", "c.img", "Dos6.22.img", "GlukOS.IMA", "mikeos.dmg", "freedos722.img", "Dos3.3.img", "Dos4.01.img", "Dos5.0.img" };
+	static std::vector<std::string> disks = { "c.img", "Dos6.22.img", "mikeos.dmg", "freedos722.img", "Dos3.3.img", "Dos4.01.img", "Dos5.0.img" };
 
 	ImGuiStyle& style = ImGui::GetStyle();
 	float window_visible_x2 = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
@@ -296,27 +302,16 @@ void Application::DiskGUI()
 			}
 		}
 	}
-	
-	static word loadAddress = 0x7C00;
-	ImGui::PushItemWidth(150);
-	m_gui.InputWord("Boot address", &loadAddress);
-	
-	if (ImGui::Button("Boot"))
+
+	if (ImGui::Button("Unmount all"))
 	{
-		m_io.ClearMemory();
-		m_bios.InitBIOSDataArea();
-		m_io.SetCurrentKey(0);
-		int disk = m_io.GetBootableDisk();
-		if (disk != -1)
-		{
-			m_io.ReadDisk(disk, loadAddress, 0, 0, 1, 1);
-		}
-		m_cpu.Reset();
-		m_cpu.IP = loadAddress;
-		m_cpu.SetSegment(CPU::CS, 0);
-		m_start = std::chrono::steady_clock::now();
+		m_io.ClearDisks();
 	}
 
+	m_io.GUI();
+
+	/*
+#ifdef _DEBUG
 	if (ImGui::Button("Load testrom"))
 	{
 		m_bios.InitBIOSDataArea();
@@ -339,17 +334,19 @@ void Application::DiskGUI()
 	{
 		RunCPUTest();
 	}
-
+#endif
+	*/
 	ImGui::End();
 }
 
 bool Application::GuiHelper::InputWord(const char* label, word* v)
 {
 	ImGuiStyle& style = ImGui::GetStyle();
-
+	uint32_t x = *v;
 	ImGui::PushItemWidth(m_glyphWidth * 5 + +style.FramePadding.x * 2.0f);
-	bool r = ImGui::InputScalar(label, ImGuiDataType_S32, (void*)v, 0, 0, "%04X", ImGuiInputTextFlags_CharsHexadecimal);
+	bool r = ImGui::InputScalar(label, ImGuiDataType_U32, (void*)&x, 0, 0, "%04X", ImGuiInputTextFlags_CharsHexadecimal);
 	ImGui::PopItemWidth();
+	*v = x;
 	return r;
 }
 

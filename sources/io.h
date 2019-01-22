@@ -32,6 +32,7 @@ public:
 	void KeyboardHalt();
 	bool IsKeyboardHalted() const;
 	bool SetCurrentKey(int c);
+	bool ClearHalt();
 	void PushKey(int c, bool release);
 	void SetKeyFlags(bool rightShift, bool leftShift, bool CTRL, bool alt);
 	int GetCurrentKeyCode() const;

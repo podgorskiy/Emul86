@@ -5,16 +5,22 @@ import atexit
 from SCons.Defaults import *
 
 release = True
+GUI = True
+
+if GUI:
+    GUIdef = ['-DEMUL86_GUI']
+else:
+    GUIdef = []
 
 if(release):
-	optimization = '-O1'
+	optimization = ['-O2', '-DNDEBUG'] + GUIdef
 	debug = '-g0'
 	lto = "1"
 	closure = "0"
 	assertions = "0"
 	demangle = "0"
 else:
-	optimization = '-O0'
+	optimization = ['-O0'] + GUIdef
 	debug = '-g3'
 	lto = "0"
 	closure = "0"
@@ -37,9 +43,9 @@ def main():
 	env.Replace(LIBLINKSUFFIX = ".bc")
 	env.Replace(LIBSUFFIX = ".bc")
  	env.Replace(OBJSUFFIX  = ".o")
- 	env.Replace(PROGSUFFIX = ".js")
+ 	env.Replace(PROGSUFFIX = ".html")
 	
-	env.Append( CPPFLAGS=[optimization] + (['-DNDEBUG'] if release else []) )
+	env.Append( CPPFLAGS=optimization)
 	env.Append( LINKFLAGS=[
 		optimization,
 		debug,
@@ -49,15 +55,22 @@ def main():
 		'-s', 'USE_GLFW=3',
 		"-s", "ASSERTIONS=" + assertions,
 		"-s", "DEMANGLE_SUPPORT=" + demangle,
-		"-s", "TOTAL_MEMORY=268435456 * 5",
+		"-s", "TOTAL_MEMORY=52428800" + (" * 2" if GUI else ""),
+        "-s", "EXTRA_EXPORTED_RUNTIME_METHODS=[\"ccall\", \"cwrap\"]",
 		"--llvm-lto", lto,
 		"--closure", closure,
 		"-s", "NO_EXIT_RUNTIME=1",
 		"-s", "DISABLE_EXCEPTION_CATCHING=1",
 		"-s", "EXPORTED_FUNCTIONS=\"['_main','_emStart','_emPause','_emReboot']\"",
 		"--preload-file", "c.img",
-		"--preload-file", "imgui.ini",
-	] )
+		"--preload-file", "imgui.ini"] + ([
+		"--preload-file", "Dos3.3.img",
+		"--preload-file", "Dos5.0.img",
+		"--preload-file", "freedos722.img",
+		"--preload-file", "Dos4.01.img",
+		"--preload-file", "mikeos.dmg",
+		"--preload-file", "Dos6.22.img"] if GUI else [])
+	)
 
 	timeStart = time.time()
 	atexit.register(PrintInformationOnBuildIsFinished, timeStart)
@@ -80,9 +93,10 @@ def main():
 	
 	env.Library('imgui', imguiSources, CPPPATH = Includes)
 	
-	program = env.Program('emul86', files, LIBS=['imgui'], CPPFLAGS=[optimization, '-std=c++14',  debug], LIBPATH='.', CPPPATH = Includes)
+	program = env.Program('emul86', files, LIBS=['imgui'], CPPFLAGS=optimization + ['-std=c++14',  debug], LIBPATH='.', CPPPATH = Includes)
 	
 	env.Depends(program, GlobR(".", "c.img"))
+	env.Depends(program, GlobR(".", "imgui.ini"))
 	
 def PrintInformationOnBuildIsFinished(startTimeInSeconds):
 	""" Launched when scons is finished """

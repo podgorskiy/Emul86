@@ -2,6 +2,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <memory>
+#include <string>
 
 struct DiskImpl;
 
@@ -38,6 +39,7 @@ public:
 
 	size_t size() const;
 
+	std::string GetPath() const;
 private:
 	uint32_t ToLBA(uint16_t cylinder, uint8_t head, uint8_t sector);
 

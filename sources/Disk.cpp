@@ -114,6 +114,8 @@ struct DiskImpl
 	DiskImpl(bool memory);
 	~DiskImpl();
 
+	std::string path;
+
 	IOBase* m_io;
 
 	Disk::BIOS_ParameterBlock m_biosBlock;
@@ -177,6 +179,8 @@ void Disk::ReadBIOS_ParameterBlock(uint32_t offset)
 void Disk::Open(const char* path, bool inmemory)
 {
 	m_impl.reset(new DiskImpl(inmemory));
+
+	m_impl->path = path;
 
 	m_impl->m_io->Init(path);
 
@@ -284,4 +288,9 @@ const Disk::BIOS_ParameterBlock& Disk::GetBiosBlock()
 size_t Disk::size() const
 {
 	return m_impl->m_size;
+}
+
+std::string Disk::GetPath() const
+{
+	return m_impl->path;
 }

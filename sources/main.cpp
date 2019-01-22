@@ -140,14 +140,17 @@ int main(int argc, char **argv)
 	);
 	int scale = windowHeight < 980 ? 1 : (windowWidth < 1285 ? 1 : 2);
 
+#ifdef EMUL86_GUI
+	scale = 1;
+#endif
 	printf("scale %d\n", scale);
 #endif
-	//scale = 4;
+	scale = 1;
 
 	// text mode 80x25, 16 colors, 8 pages
 	// character 8x16, so 640x400
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 	GLFWwindow* window = glfwCreateWindow(1200 * scale, 800 * scale, "Emul86", nullptr, nullptr);
 #else
 	GLFWwindow* window = glfwCreateWindow(640 * scale, 400 * scale, "Emul86", nullptr, nullptr);
@@ -242,6 +245,10 @@ int main(int argc, char **argv)
 
 		glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int, int action, int mods)
 		{
+			if (key == -1)
+			{
+				return;
+			}
 			if (action == GLFW_PRESS)
 				KeysDown[key] = true;
 			if (action == GLFW_RELEASE)

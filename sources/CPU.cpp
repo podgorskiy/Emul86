@@ -10,34 +10,34 @@ static bool logging_state = false;
 
 FILE* logfile;
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 #define APPEND_DBG(X) \
 dbg_args_ptr = strcpy(dbg_args_ptr, X) + strlen(X);
 #else
 #define APPEND_DBG(X)
 #endif
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 #define APPEND_HEX_DBG(X) \
 dbg_args_ptr = n2hexstr(dbg_args_ptr, X)
 #else
 #define APPEND_HEX_DBG(X)
 #endif
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 #define APPEND_HEXN_DBG(X,N) \
 dbg_args_ptr = n2hexstr(dbg_args_ptr, X, N)
 #else
 #define APPEND_HEXN_DBG(X, N)
 #endif
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 #define CMD_NAME(X) strcpy(dbg_cmd_name, X);
 #else
 #define CMD_NAME(X)
 #endif
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 #define UNKNOWN_OPCODE(X) \
 			ASSERT(false, "Unknown opcode: 0x%s\n", n2hexstr(X).c_str());
 #define APPEND_DBG_REGT(X, T) APPEND_DBG(GetRegName<T>(X))
@@ -972,7 +972,7 @@ void CPU::LODS()
 	APPEND_DBG_SEG(offsetreg);
 	APPEND_DBG(":SI], ");
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 	GetRegister<T>(0);
 #endif
 
@@ -983,7 +983,7 @@ void CPU::LODS()
 		SetRegister<T>(0, OPERAND_A);
 		m_registers[SI] += GetStep<T>();
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 		if (i != times - 1)
 		{
 			*(dbg_args_ptr = dbg_args) = 0;
@@ -1019,7 +1019,7 @@ void CPU::STOS()
 		m_io.SetMemory<T>(ADDRESS, OPERAND_A);
 		m_registers[DI] += step;
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 		if (i != times - 1)
 		{
 			*(dbg_args_ptr = dbg_args) = 0;
@@ -1059,7 +1059,7 @@ void CPU::SCAS()
 		UpdateFlags_CFOFAF_sub<T>();
 		UpdateFlags_SFZFPF<T>();
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 		if (i != times - 1)
 		{
 			*(dbg_args_ptr = dbg_args) = 0;
@@ -1117,7 +1117,7 @@ void CPU::CMPS()
 		m_registers[SI] += step;
 		m_registers[DI] += step;
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 		if (i != times - 1)
 		{
 			*(dbg_args_ptr = dbg_args) = 0;
@@ -1173,7 +1173,7 @@ void CPU::MOVS()
 		m_registers[SI] += step;
 		m_registers[DI] += step;
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 		if (i != times - 1)
 		{
 			*(dbg_args_ptr = dbg_args) = 0;
@@ -1290,7 +1290,7 @@ void CPU::OUTS()
 
 void CPU::Step()
 {
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 	dbg_args_ptr = dbg_args;
 	dbg_args[0] = 0;
 
@@ -1315,7 +1315,7 @@ void CPU::Step()
 
 	StepInternal();
 
-#ifdef _DEBUG
+#ifdef EMUL86_GUI
 	if (logging_state)
 	{
 		m_log.appendf("%s %s %s\n\r", dbg_cmd_address, dbg_cmd_name, dbg_args);
@@ -2281,7 +2281,7 @@ void CPU::GUI()
 	char buff[128];
 	ImGui::Begin("CPU Status");
 	ImGui::Text("%s %s %s", dbg_cmd_address, dbg_cmd_name, dbg_args);
-	ImGui::Dummy(ImVec2(0, 5));
+	ImGui::Dummy(ImVec2(0, 2 * ImGui::GetIO().FontGlobalScale));
 	ImGui::SameLine();
 	ImGui::NewLine();
 	for (int i = 0; i < 8; ++i)
@@ -2300,7 +2300,7 @@ void CPU::GUI()
 		ImGui::TextColored(color, "%s=%s", m_segNames[i], buff);
 		ImGui::SameLine();
 	}
-	ImGui::Dummy(ImVec2(20, 0));
+	ImGui::Dummy(ImVec2(10 * ImGui::GetIO().FontGlobalScale, 0));
 	ImGui::SameLine();
 
 	n2hexstr(buff, IP);
@@ -2323,7 +2323,7 @@ void CPU::GUI()
 
 	ImGui::End();
 
-	ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(ImVec2(250 * ImGui::GetIO().FontGlobalScale, 200 * ImGui::GetIO().FontGlobalScale), ImGuiCond_FirstUseEver);
 	ImGui::Begin("log");
 	if (ImGui::Checkbox("Do logging", &logging_state)) {
 		m_log.clear();
