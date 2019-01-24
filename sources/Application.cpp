@@ -38,7 +38,7 @@ int Application::Init()
 	m_gui.Init();
 
 //#ifndef EMUL86_GUI
-	Disk disk;	disk.Open("c.img", true);
+	Disk disk;	disk.Open("dos622_nc_tp_pop", true);
 	m_io.AddDisk(disk);
 	Boot();
 //#endif
@@ -278,8 +278,8 @@ void Application::SetRunning(bool enabled)
 void Application::DiskGUI()
 {
 	ImGui::Begin("Disk");
-	
-	static std::vector<std::string> disks = { "c.img", "Dos6.22.img", "mikeos.dmg", "freedos722.img", "Dos3.3.img", "Dos4.01.img", "Dos5.0.img" };
+
+	static std::vector<std::string> disks = { "dos622_nc_tp_pop", "Dos6.22", "mikeos", "freedos722", "Dos3.3", "Dos4.01", "Dos5.0" };
 
 	ImGuiStyle& style = ImGui::GetStyle();
 	float window_visible_x2 = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;

@@ -145,7 +145,7 @@ int main(int argc, char **argv)
 #endif
 	printf("scale %d\n", scale);
 #endif
-	scale = 1;
+	//scale = 1;
 
 	// text mode 80x25, 16 colors, 8 pages
 	// character 8x16, so 640x400

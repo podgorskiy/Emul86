@@ -81,6 +81,7 @@ add_subdirectory (libs/gl3w)
 # Includes
 ##############################################################
 include_directories(libs/glm)
+include_directories(libs/lz4)
 include_directories(libs/glfw/include)
 include_directories(libs/gl3w/include)
 include_directories(libs/SimpleText/include)
@@ -106,7 +107,7 @@ add_library(imgui ${IMGUI_SOURCES})
 ##############################################################
 # Main sources
 ##############################################################
-file(GLOB_RECURSE SOURCES sources/*.cpp sources/*.h)
+file(GLOB_RECURSE SOURCES sources/*.cpp sources/*.h libs/lz4/lz4.c)
 
 ##############################################################
 # Targets
