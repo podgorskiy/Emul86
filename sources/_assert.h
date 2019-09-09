@@ -4,7 +4,7 @@
 #ifdef _WIN32
 #define BREAKPOINT() { __debugbreak(); }
 #else
-#define BREAKPOINT()
+#define BREAKPOINT() { __builtin_trap(); }
 #endif
 
 namespace Assert

@@ -113,6 +113,8 @@ public:
 		else
 		{
 			m_data = new char[m_size + 1024];
+
+			fseek(file, 0L, SEEK_SET);
 			fread(m_data, m_size, 1, file);
 		}
 		fclose(file);

@@ -55,6 +55,8 @@ void Update(void* window)
 
 	std::chrono::duration<float> elapsed_time = (current_timestamp - start);
 
+	glfwPollEvents();
+
 	ImGui_ImplGlfwGL3_NewFrame();
 	
 	ImGuiIO& io = ImGui::GetIO();
@@ -80,11 +82,9 @@ void Update(void* window)
 
 	glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-	glfwPollEvents();
-
 	app->Update();
 
-	//ImGui::ShowDemoWindow();
+	ImGui::ShowDemoWindow();
 
 	ImGui::Render();
 
