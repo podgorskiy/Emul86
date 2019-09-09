@@ -2,7 +2,7 @@
 #include <stdarg.h>
 #include "_assert.h"
 
-void(*Assert::OpPause)() = nullptr;
+std::function<void()> Assert::OpPause;
 
 #ifdef _WIN32
 #include <windows.h>
@@ -38,7 +38,11 @@ int DebugMessageBox(HWND hwnd, const char* lpText, const char* lpCaption, UINT u
 	DebugMessageBoxHook = SetWindowsHookEx(WH_CBT, &CustomMessageBoxProc, 0, GetCurrentThreadId());
 	return MessageBoxA(hwnd, lpText, lpCaption, uType);
 }
+#elif __linux__
+
+
 #endif
+
 
 static Assert::result ShowMessageBox(const char *file, int line, const char *condition, const char *fmt, va_list ap)
 {
@@ -71,7 +75,7 @@ static Assert::result ShowMessageBox(const char *file, int line, const char *con
 	}
 	return Assert::result_break;
 #else
-	return Assert::result_ignore_always;
+	return Assert::result_ignore_once;
 #endif
 }
 

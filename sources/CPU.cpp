@@ -39,7 +39,8 @@ dbg_args_ptr = n2hexstr(dbg_args_ptr, X, N)
 
 #ifdef EMUL86_GUI
 #define UNKNOWN_OPCODE(X) \
-			ASSERT(false, "Unknown opcode: 0x%s\n", n2hexstr(X).c_str());
+			ASSERT(false, "Unknown opcode: 0x%s\n", n2hexstr(X).c_str()); \
+			strcpy(dbg_cmd_name, "???");
 #define APPEND_DBG_REGT(X, T) APPEND_DBG(GetRegName<T>(X))
 #define APPEND_DBG_REGB(X) APPEND_DBG(m_regNames[X])
 #define APPEND_DBG_REGW(X) APPEND_DBG(m_regNames[X + 8])

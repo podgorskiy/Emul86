@@ -16,17 +16,12 @@
 
 namespace Assert
 {
-	extern void(*OpPause)();
-}
-
-void CallbackOpPause()
-{
-	//m_run = false;
+	extern std::function<void()> OpPause;
 }
 
 Application::Application(): m_cpu(m_io), m_bios(m_io, m_cpu)
 {
-	Assert::OpPause = CallbackOpPause;
+	Assert::OpPause = [this](){ m_run = false; };
 }
 
 int Application::Init()
