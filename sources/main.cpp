@@ -84,7 +84,7 @@ void Update(void* window)
 
 	app->Update();
 
-	ImGui::ShowDemoWindow();
+	// ImGui::ShowDemoWindow();
 
 	ImGui::Render();
 
