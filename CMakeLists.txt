@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.2)
 
+cmake_policy(SET CMP0072 NEW)
+
 project(Emul86)
 set(EXECUTABLE_NAME "Emul86")
 
@@ -32,13 +34,13 @@ elseif(APPLE)
 else()
 	set(COMMON_OPTIONS)
 	set(DEBUG_OPTIONS -g)
-	set(RELEASE_OPTIONS -Os)
+	set(RELEASE_OPTIONS -Ofast -fno-rtti -ffast-math)
 endif()
+
+set(CMAKE_CONFIGURATION_TYPES  Release Debug)
 
 set(DEBUG_OPTIONS ${DEBUG_OPTIONS} ${COMMON_OPTIONS})
 set(RELEASE_OPTIONS ${RELEASE_OPTIONS} ${COMMON_OPTIONS})
-
-set(CMAKE_MODULE_LINKER_FLAGS_RELEASE "${CMAKE_MODULE_LINKER_FLAGS_RELEASE} /LTCG")
 
 add_compile_options(
   "$<$<CONFIG:RELEASE>:${RELEASE_OPTIONS}>"
@@ -47,15 +49,15 @@ add_compile_options(
 if(MSVC)
 	set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} /DEBUG")
 	set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /LTCG /INCREMENTAL:NO")
+	add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
+	add_definitions(-D_CRT_NONSTDC_NO_DEPRECATE)
+	add_definitions(-DWINVER=0x0601)
+	add_definitions(-D_WIN32_WINNT=0x0601)
+	add_definitions(-DNTDDI_VERSION=0x06010000)
 endif()
 
-set(CMAKE_CONFIGURATION_TYPES  Release Debug)
+add_definitions(-DEMUL86_GUI)
 
-add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
-add_definitions(-D_CRT_NONSTDC_NO_DEPRECATE)
-add_definitions(-DWINVER=0x0601)
-add_definitions(-D_WIN32_WINNT=0x0601)
-add_definitions(-DNTDDI_VERSION=0x06010000)
 
 if (CMAKE_VERSION VERSION_LESS "3.1")
 	if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -69,7 +71,7 @@ endif ()
 # Generating OpenGL profile
 ##############################################################
 message("Executing gl3w_gen.py")
-execute_process(COMMAND python gl3w_gen.py WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/libs/gl3w)
+execute_process(COMMAND python ${PROJECT_SOURCE_DIR}/libs/gl3w/gl3w_gen.py WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/libs/gl3w)
 
 ##############################################################
 # Adding libraries and subdirectories
@@ -81,6 +83,7 @@ add_subdirectory (libs/gl3w)
 # Includes
 ##############################################################
 include_directories(libs/glm)
+include_directories(libs/lz4/lib)
 include_directories(libs/glfw/include)
 include_directories(libs/gl3w/include)
 include_directories(libs/SimpleText/include)
@@ -106,7 +109,7 @@ add_library(imgui ${IMGUI_SOURCES})
 ##############################################################
 # Main sources
 ##############################################################
-file(GLOB_RECURSE SOURCES sources/*.cpp sources/*.h)
+file(GLOB_RECURSE SOURCES sources/*.cpp sources/*.h libs/lz4/lz4.c)
 
 ##############################################################
 # Targets

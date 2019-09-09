@@ -1,10 +1,11 @@
 #pragma once
 #include <stdio.h>
 #include <cstdlib>
+#include <functional>
 #ifdef _WIN32
 #define BREAKPOINT() { __debugbreak(); }
 #else
-#define BREAKPOINT()
+#define BREAKPOINT() { __builtin_trap(); }
 #endif
 
 namespace Assert
@@ -18,7 +19,7 @@ namespace Assert
 
 	result message(const char *file, int line, const char *condition, const char *fmt, ...);
 
-	extern void (*OpPause)();
+	extern std::function<void()> OpPause;
 }
 
 #define ASSERT(X, ...) \
@@ -40,7 +41,7 @@ namespace Assert
 		}\
 		else if(r==Assert::result_ignore_once)\
 		{\
-			if (Assert::OpPause != nullptr) Assert::OpPause(); \
+			if (Assert::OpPause) Assert::OpPause(); \
 		}\
 	}\
 }

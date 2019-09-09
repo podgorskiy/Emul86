@@ -5,7 +5,7 @@ import atexit
 from SCons.Defaults import *
 
 release = True
-GUI = True
+GUI = False
 
 if GUI:
     GUIdef = ['-DEMUL86_GUI']
@@ -62,14 +62,14 @@ def main():
 		"-s", "NO_EXIT_RUNTIME=1",
 		"-s", "DISABLE_EXCEPTION_CATCHING=1",
 		"-s", "EXPORTED_FUNCTIONS=\"['_main','_emStart','_emPause','_emReboot']\"",
-		"--preload-file", "c.img",
+		"--preload-file", "dos622_nc_tp_pop.cmp",
 		"--preload-file", "imgui.ini"] + ([
-		"--preload-file", "Dos3.3.img",
-		"--preload-file", "Dos5.0.img",
-		"--preload-file", "freedos722.img",
-		"--preload-file", "Dos4.01.img",
-		"--preload-file", "mikeos.dmg",
-		"--preload-file", "Dos6.22.img"] if GUI else [])
+		"--preload-file", "Dos3.3.cmp",
+		"--preload-file", "Dos5.0.cmp",
+		"--preload-file", "freedos722.cmp",
+		"--preload-file", "Dos4.01.cmp",
+		"--preload-file", "mikeos.cmp",
+		"--preload-file", "Dos6.22.cmp"] if GUI else [])
 	)
 
 	timeStart = time.time()
@@ -79,6 +79,7 @@ def main():
 		"libs/glm",
 		"libs/imgui",
 		"libs/SimpleText/include",
+		"libs/lz4",
 	]
 	
 	imguiSources = [
@@ -87,15 +88,20 @@ def main():
 		"libs/imgui/imgui_widgets.cpp",
 		"libs/imgui/imgui_draw.cpp",
 	]
+    
+	lz4Sources = [
+		"libs/lz4/lz4.c",
+	]
 	
 	sourcesPath = "sources"
 	files = GlobR(sourcesPath, "*.cpp")
 	
 	env.Library('imgui', imguiSources, CPPPATH = Includes)
+	env.Library('lz4', lz4Sources)
 	
-	program = env.Program('emul86', files, LIBS=['imgui'], CPPFLAGS=optimization + ['-std=c++14',  debug], LIBPATH='.', CPPPATH = Includes)
+	program = env.Program('emul86', files, LIBS=['imgui', 'lz4'], CPPFLAGS=optimization + ['-std=c++14',  debug], LIBPATH='.', CPPPATH = Includes)
 	
-	env.Depends(program, GlobR(".", "c.img"))
+	env.Depends(program, GlobR(".", "dos622_nc_tp_pop.img"))
 	env.Depends(program, GlobR(".", "imgui.ini"))
 	
 def PrintInformationOnBuildIsFinished(startTimeInSeconds):

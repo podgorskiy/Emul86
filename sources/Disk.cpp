@@ -1,4 +1,5 @@
 #include "Disk.h"
+#include <lz4.h>
 #include <string.h>
 #include <assert.h>
 #include <string>
@@ -7,6 +8,8 @@ enum
 {
 	SectorSize = 512
 };
+
+static uint64_t magic = 0x6d4936386c756d45ULL;
 
 class IOBase
 {
@@ -34,6 +37,16 @@ protected:
 	size_t m_size;
 };
 
+void try_open(FILE*& f, const char* fmt, const char* path)
+{
+	if (f == nullptr)
+	{
+		char buffer[256];
+		sprintf(buffer, fmt, path);
+		f = fopen(buffer, "rb");
+	}
+}
+
 class IOMemory: public IOBase
 {
 public:
@@ -47,12 +60,63 @@ public:
 
 	virtual void Init(const char* path) override
 	{
-		FILE* file = fopen(path, "rb");
+		FILE* file = nullptr;
+		try_open(file, "%s.cmp", path);
+		try_open(file, "../%s.cmp", path);
+		try_open(file, "%s", path);
+		try_open(file, "%s.img", path);
+		try_open(file, "%s.ima", path);
+		try_open(file, "%s.dmg", path);
+		try_open(file, "../%s", path);
+		try_open(file, "../%s.img", path);
+		try_open(file, "../%s.ima", path);
+		try_open(file, "../%s.dmg", path);
+	
 		fseek(file, 0L, SEEK_END);
 		m_size = ftell(file);
 		fseek(file, 0L, SEEK_SET);
-		m_data = new char[m_size  +1024];
-		fread(m_data, m_size, 1, file);
+
+		uint64_t in_magic;
+		fread(&in_magic, sizeof(uint64_t), 1, file);
+
+		if (in_magic == magic)
+		{
+			uint64_t block_size = 1024 * 1024;
+
+			uint64_t bound = (uint64_t)LZ4_compressBound((int)block_size);
+			char* data = new char[bound];
+
+			uint64_t decompressed_size = 0;
+			fread(&decompressed_size, sizeof(uint64_t), 1, file);
+			m_data = new char[decompressed_size + 1024];
+
+			uint64_t p = 0;
+			for (p = 0; p != decompressed_size;)
+			{
+				uint64_t this_block_size = 0;
+				uint64_t compressed_size = 0;
+				fread(&this_block_size, sizeof(uint64_t), 1, file);
+				fread(&compressed_size, sizeof(uint64_t), 1, file);
+				fread(data, compressed_size, 1, file);
+
+				for (unsigned int i = 0; i < (compressed_size + sizeof(uint64_t) - 1) / sizeof(uint64_t); ++i)
+					reinterpret_cast<uint64_t*>(data)[i] ^= 0xA3F2A5C6B8B48544;
+
+				uint64_t compressed = LZ4_decompress_fast(data, m_data + p, this_block_size);
+				assert(compressed == compressed_size);
+				p += this_block_size;
+			}
+			uint64_t size_read = ftell(file);
+			assert(m_size == size_read);
+			m_size = decompressed_size;
+		}
+		else
+		{
+			m_data = new char[m_size + 1024];
+
+			fseek(file, 0L, SEEK_SET);
+			fread(m_data, m_size, 1, file);
+		}
 		fclose(file);
 	}
 
